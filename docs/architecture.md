@@ -12,7 +12,7 @@ CLI arguments
   -> UDP companion Nmap scan unless disabled
   -> XML parsing
   -> banner-first profile matching
-  -> service-specific follow-up scans
+  -> batched service-specific follow-up scans
   -> merged host/service observations
   -> terminal progress output
   -> text report
@@ -38,7 +38,8 @@ portweft/nmap_runner.py
   subprocess execution, and Nmap error extraction.
 
 portweft/nmap_xml.py
-  Nmap XML parsing, OS inference, script-output extraction, and result merging.
+  Streaming Nmap XML parsing, OS inference, bounded script-output extraction,
+  and result merging.
 
 portweft/profiles.py
   Built-in profile definitions, fallback ports, UDP ports, banner terms, and
@@ -48,7 +49,7 @@ portweft/matcher.py
   Banner-first service-to-profile matching.
 
 portweft/reporting.py
-  Text report generation.
+  Streaming text report generation.
 
 portweft/errors.py
   Expected runtime exceptions with stable exit codes.

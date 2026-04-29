@@ -48,6 +48,30 @@ class NmapXmlTests(unittest.TestCase):
     def test_empty_xml_returns_no_hosts(self) -> None:
         self.assertEqual(parse_nmap_xml(FIXTURES / "empty.xml"), [])
 
+    def test_script_output_can_be_capped(self) -> None:
+        with temporary_directory() as temp_dir:
+            path = Path(temp_dir) / "script.xml"
+            path.write_text(
+                """
+                <nmaprun>
+                  <host>
+                    <address addr="192.0.2.10" addrtype="ipv4"/>
+                    <ports>
+                      <port protocol="tcp" portid="80">
+                        <state state="open"/>
+                        <script id="big" output="abcdefghijklmnopqrstuvwxyz"/>
+                      </port>
+                    </ports>
+                  </host>
+                </nmaprun>
+                """,
+                encoding="utf-8",
+            )
+
+            hosts = parse_nmap_xml(path, max_script_output_chars=10)
+
+        self.assertEqual(hosts[0].services[0].scripts["big"], "abcdefghij")
+
     def test_malformed_xml_raises_parse_error(self) -> None:
         with temporary_directory() as temp_dir:
             path = Path(temp_dir) / "bad.xml"

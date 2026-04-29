@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
-@dataclass
+@dataclass(slots=True)
 class ServiceObservation:
     host: str
     port: int
@@ -23,7 +23,7 @@ class ServiceObservation:
         return " ".join(piece for piece in pieces if piece).strip() or "unknown"
 
 
-@dataclass
+@dataclass(slots=True)
 class HostObservation:
     address: str
     hostname: str = ""

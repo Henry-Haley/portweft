@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+from collections import defaultdict
+import shutil
 import sys
 from pathlib import Path
 
@@ -11,7 +13,7 @@ from portweft.errors import OutputDirectoryError, PortWeftError
 from portweft.matcher import evidence_summary, has_observable_evidence, match_profiles
 from portweft.models import HostObservation, ServiceObservation
 from portweft.nmap_runner import (
-    build_followup_command,
+    build_followup_batch_command,
     build_initial_command,
     build_udp_command,
     ensure_nmap_available,
@@ -21,7 +23,11 @@ from portweft.nmap_runner import (
     udp_default_ports_text,
     validate_nmap_passthrough,
 )
-from portweft.nmap_xml import merge_hosts, parse_nmap_xml
+from portweft.nmap_xml import (
+    DEFAULT_MAX_SCRIPT_OUTPUT_CHARS,
+    merge_hosts,
+    parse_nmap_xml,
+)
 from portweft.reporting import write_report
 from portweft.utils import (
     now_slug,
@@ -53,6 +59,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--output-dir",
         default="output",
         help="Directory for XML scan output and reports",
+    )
+    parser.add_argument(
+        "--keep-runs",
+        type=int,
+        default=0,
+        help="Keep only the newest N output runs after a successful scan; 0 keeps all",
+    )
+    parser.add_argument(
+        "--max-script-output-chars",
+        type=int,
+        default=DEFAULT_MAX_SCRIPT_OUTPUT_CHARS,
+        help="Maximum NSE script output characters retained per script",
     )
     parser.add_argument(
         "--nmap-path",
@@ -105,6 +123,10 @@ def run(argv: list[str] | None = None) -> int:
         return 0
 
     parsed, unknown_nmap_args = parser.parse_known_args(effective_argv)
+    if parsed.keep_runs < 0:
+        parser.error("--keep-runs must be zero or greater.")
+    if parsed.max_script_output_chars < 0:
+        parser.error("--max-script-output-chars must be zero or greater.")
     ensure_nmap_available(parsed.nmap_path, parsed.dry_run)
     extra_nmap_args = split_nmap_args(parsed.nmap_args) + normalize_unknown_nmap_args(
         unknown_nmap_args
@@ -119,7 +141,6 @@ def run(argv: list[str] | None = None) -> int:
     output_root = Path(parsed.output_dir)
     scan_dir = output_root / "scans" / run_id
     report_dir = output_root / "reports"
-    prepare_output_dirs(scan_dir, report_dir)
 
     initial_xml = scan_dir / "initial.xml"
     udp_xml = scan_dir / "udp.xml"
@@ -127,6 +148,9 @@ def run(argv: list[str] | None = None) -> int:
 
     print_step(f"{APP_NAME} run {run_id} starting")
     print_step(f"Targets: {', '.join(targets)}")
+
+    if not parsed.dry_run:
+        prepare_output_dirs(scan_dir, report_dir)
 
     initial_command = build_initial_command(parsed, targets, initial_xml, extra_nmap_args)
     print_step("Initial Nmap scan starting")
@@ -148,17 +172,17 @@ def run(argv: list[str] | None = None) -> int:
             print_step("UDP companion scan failed; continuing with available TCP results")
 
     if parsed.dry_run:
-        print_section_done("Dry run")
+        print_section_done("Dry run", "no files written")
         return 0
 
     print_step(f"Parsing initial XML: {initial_xml}")
-    hosts = parse_nmap_xml(initial_xml)
+    hosts = parse_nmap_xml(initial_xml, parsed.max_script_output_chars)
     print_section_done("Initial XML parse")
 
     if udp_result is not None and udp_result.ok:
         print_step(f"Parsing UDP XML: {udp_xml}")
         try:
-            merge_hosts(hosts, parse_nmap_xml(udp_xml))
+            merge_hosts(hosts, parse_nmap_xml(udp_xml, parsed.max_script_output_chars))
         except PortWeftError as error:
             from portweft.utils import print_error
 
@@ -180,6 +204,7 @@ def run(argv: list[str] | None = None) -> int:
     print_step(f"Writing report: {report_path}")
     write_report(report_path, targets, initial_xml, hosts)
     print_section_done("Report writing", str(report_path))
+    prune_old_runs(output_root, parsed.keep_runs)
     print_section_done(f"{APP_NAME} run")
     return 0
 
@@ -205,43 +230,52 @@ def run_followups(
     hosts: list[HostObservation],
     open_services: list[ServiceObservation],
 ) -> None:
+    groups: dict[tuple[str, str, str], list[ServiceObservation]] = defaultdict(list)
     for service in open_services:
         profiles = match_profiles(service)
         if not profiles:
             print_unmatched_service(service)
             continue
         for profile in profiles:
-            followup_xml = scan_dir / f"{safe_name(service.host)}_{service.port}_{profile}.xml"
-            print_step(f"Follow-up profile {profile} starting for {service.host}:{service.port}")
-            command = build_followup_command(
-                parsed,
-                service,
-                profile,
-                followup_xml,
-                extra_nmap_args,
-            )
-            followup_result = run_command(command, parsed.dry_run)
-            if not followup_result.ok:
-                print_step(f"Follow-up profile failed: {profile} {service.host}:{service.port}")
-                continue
-            try:
-                update_hosts = parse_nmap_xml(followup_xml)
-            except PortWeftError as error:
-                from portweft.utils import print_error
+            groups[(service.host, service.protocol.lower(), profile)].append(service)
 
-                print_error(str(error))
-                print_step(
-                    f"Follow-up profile parse failed: {profile} "
-                    f"{service.host}:{service.port}"
-                )
-                continue
-            print_followup_findings(profile, update_hosts)
-            announce_new_os_findings(hosts, update_hosts)
-            merge_hosts(hosts, update_hosts)
-            print_section_done(
-                f"Follow-up profile {profile}",
-                f"{service.host}:{service.port}",
+    for host, protocol, profile in sorted(groups):
+        services = groups[(host, protocol, profile)]
+        ports = sorted({service.port for service in services})
+        port_text = ",".join(str(port) for port in ports)
+        followup_xml = scan_dir / f"{safe_name(host)}_{protocol}_{profile}.xml"
+        print_step(f"Follow-up profile {profile} starting for {host}:{port_text}/{protocol}")
+        command = build_followup_batch_command(
+            parsed,
+            host,
+            protocol,
+            ports,
+            profile,
+            followup_xml,
+            extra_nmap_args,
+        )
+        followup_result = run_command(command, parsed.dry_run)
+        if not followup_result.ok:
+            print_step(f"Follow-up profile failed: {profile} {host}:{port_text}/{protocol}")
+            continue
+        try:
+            update_hosts = parse_nmap_xml(followup_xml, parsed.max_script_output_chars)
+        except PortWeftError as error:
+            from portweft.utils import print_error
+
+            print_error(str(error))
+            print_step(
+                f"Follow-up profile parse failed: {profile} "
+                f"{host}:{port_text}/{protocol}"
             )
+            continue
+        print_followup_findings(profile, update_hosts)
+        announce_new_os_findings(hosts, update_hosts)
+        merge_hosts(hosts, update_hosts)
+        print_section_done(
+            f"Follow-up profile {profile}",
+            f"{host}:{port_text}/{protocol}",
+        )
     print_section_done("Follow-up scans")
 
 
@@ -266,3 +300,34 @@ def announce_new_os_findings(
         existing_unknown = existing_host is None or existing_host.os_label() == "unknown"
         if update_host.os_label() != "unknown" and existing_unknown:
             print_host_os(update_host)
+
+
+def prune_old_runs(output_root: Path, keep_runs: int) -> None:
+    if keep_runs <= 0:
+        return
+
+    scan_root = output_root / "scans"
+    report_root = output_root / "reports"
+    run_ids = set()
+    if scan_root.exists():
+        run_ids.update(path.name for path in scan_root.iterdir() if path.is_dir())
+    if report_root.exists():
+        run_ids.update(path.stem for path in report_root.glob("*.txt"))
+
+    stale_run_ids = sorted(run_ids, reverse=True)[keep_runs:]
+    removed = 0
+    for run_id in stale_run_ids:
+        scan_path = scan_root / run_id
+        report_path = report_root / f"{run_id}.txt"
+        try:
+            if scan_path.exists():
+                shutil.rmtree(scan_path)
+                removed += 1
+            if report_path.exists():
+                report_path.unlink()
+                removed += 1
+        except OSError as error:
+            raise OutputDirectoryError(str(output_root), str(error)) from error
+
+    if removed:
+        print_section_done("Output retention", f"removed {removed} old item(s)")

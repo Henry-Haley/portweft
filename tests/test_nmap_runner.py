@@ -15,6 +15,7 @@ from portweft.errors import (
 )
 from portweft.models import ServiceObservation
 from portweft.nmap_runner import (
+    build_followup_batch_command,
     build_followup_command,
     build_initial_command,
     build_udp_command,
@@ -36,6 +37,16 @@ def parsed_args(**overrides) -> argparse.Namespace:
     }
     values.update(overrides)
     return argparse.Namespace(**values)
+
+
+class FakeProcess:
+    def __init__(self, returncode: int, stdout: str = "", stderr: str = "") -> None:
+        self.returncode = returncode
+        self.stdout = io.StringIO(stdout)
+        self.stderr = io.StringIO(stderr)
+
+    def wait(self) -> int:
+        return self.returncode
 
 
 class NmapRunnerTests(unittest.TestCase):
@@ -138,28 +149,56 @@ class NmapRunnerTests(unittest.TestCase):
         self.assertIn("U:161", command)
         self.assertIn("snmp-info", command)
 
+    def test_build_followup_batch_command_combines_ports(self) -> None:
+        command = build_followup_batch_command(
+            parsed_args(),
+            "192.0.2.10",
+            "tcp",
+            [443, 80, 443],
+            "web",
+            Path("web.xml"),
+            [],
+        )
+
+        self.assertIn("80,443", command)
+        self.assertIn("web.xml", command)
+        self.assertEqual(command[-1], "192.0.2.10")
+
     def test_run_command_converts_file_not_found_to_portweft_error(self) -> None:
-        with patch("portweft.nmap_runner.subprocess.run", side_effect=FileNotFoundError):
+        with patch("portweft.nmap_runner.subprocess.Popen", side_effect=FileNotFoundError):
             stdout = io.StringIO()
             with contextlib.redirect_stdout(stdout):
                 with self.assertRaises(NmapNotFoundError):
                     run_command(["missing-nmap"], dry_run=False)
 
     def test_run_command_returns_nmap_error_text(self) -> None:
-        completed = SimpleNamespace(
+        completed = FakeProcess(
             returncode=1,
-            stdout="",
             stderr="nmap: unrecognized option '--bad-flag'\nsee nmap -h\n",
         )
         stderr = io.StringIO()
         stdout = io.StringIO()
-        with patch("portweft.nmap_runner.subprocess.run", return_value=completed):
+        with patch("portweft.nmap_runner.subprocess.Popen", return_value=completed):
             with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
                 result = run_command(["nmap", "--bad-flag"], dry_run=False)
 
         self.assertFalse(result.ok)
         self.assertEqual(result.exit_code, 1)
         self.assertIn("unrecognized option", stderr.getvalue())
+
+    def test_run_command_keeps_only_bounded_output_tail(self) -> None:
+        stderr_text = "\n".join(f"line {index}" for index in range(20))
+        completed = FakeProcess(returncode=1, stderr=stderr_text)
+
+        with patch("portweft.nmap_runner.subprocess.Popen", return_value=completed):
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(
+                io.StringIO()
+            ):
+                result = run_command(["nmap"], dry_run=False, max_output_lines=3)
+
+        self.assertNotIn("line 0", result.stderr)
+        self.assertIn("line 17", result.stderr)
+        self.assertIn("line 19", result.stderr)
 
     def test_extract_nmap_error_uses_stdout_when_stderr_is_empty(self) -> None:
         result = SimpleNamespace(exit_code=2, stdout="bad target\n", stderr="")

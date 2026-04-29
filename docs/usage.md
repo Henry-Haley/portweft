@@ -127,8 +127,27 @@ Preview commands without scanning:
 python3 -m portweft 192.0.2.10 -p 22,80,443 --dry-run -- -T4 -Pn
 ```
 
-Dry-run mode still prepares the output directories and prints the exact Nmap
-commands that would be executed.
+Dry-run mode prints the exact Nmap commands that would be executed and does not
+write output files.
+
+## Output Retention
+
+Keep only the newest completed output runs:
+
+```bash
+python3 -m portweft 192.0.2.10 --keep-runs 10
+```
+
+The default is `0`, which keeps all existing output.
+
+## Script Output Cap
+
+PortWeft keeps NSE script output bounded in memory and reports. Override the
+per-script retained character count:
+
+```bash
+python3 -m portweft 192.0.2.10 --max-script-output-chars 4096
+```
 
 ## Nmap Path
 
@@ -157,7 +176,7 @@ output/
     <run-id>/
       initial.xml
       udp.xml
-      <host>_<port>_<profile>.xml
+      <host>_<protocol>_<profile>.xml
   reports/
     <run-id>.txt
 ```

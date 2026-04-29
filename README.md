@@ -159,6 +159,18 @@ Preview commands without running scans:
 python3 -m portweft 192.0.2.10 -p 22,80,443 --dry-run
 ```
 
+Keep only the newest output runs:
+
+```bash
+python3 -m portweft 192.0.2.10 --keep-runs 10
+```
+
+Adjust the retained NSE script output per script:
+
+```bash
+python3 -m portweft 192.0.2.10 --max-script-output-chars 4096
+```
+
 Disable the default UDP companion scan:
 
 ```bash
@@ -202,7 +214,8 @@ output/
 ```
 
 The initial Nmap XML is preserved, follow-up scan XML files are stored by
-service profile, and a text report summarizes the collected service facts.
+host/protocol/profile, and a text report summarizes the collected service
+facts. Dry-run mode only prints planned commands and does not write files.
 
 The terminal also prints progress while the run is happening. Examples of the
 screen output include:
@@ -214,7 +227,7 @@ OS identified: 192.0.2.10 -> Linux 5.4 - 5.15 (93% accuracy)
 Open ports for 192.0.2.10:
   22/tcp ssh OpenSSH 8.9p1 Ubuntu
   443/tcp https nginx 1.24.0
-Follow-up profile web complete: 192.0.2.10:443
+Follow-up profile web complete: 192.0.2.10:443/tcp
 Report writing complete: output/reports/<run>.txt
 ```
 
@@ -290,6 +303,8 @@ The default behavior is intentionally conservative:
 - Service version detection uses light probing unless the user provides their
   own Nmap flags.
 - Follow-up scans are selected only for services that were observed open.
+- Follow-up scans are batched by host, protocol, and service profile.
 - Follow-up scripts are limited to basic information-gathering NSE scripts.
+- NSE script output retained in memory and reports is capped.
 - No vulnerability scripts are selected by default.
 - `--dry-run` shows the exact commands before execution.

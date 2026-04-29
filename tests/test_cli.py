@@ -7,7 +7,7 @@ import sys
 import unittest
 from pathlib import Path
 
-from portweft.cli import main, print_unmatched_service
+from portweft.cli import main, print_unmatched_service, prune_old_runs
 from portweft.models import ServiceObservation
 from tests.helpers import temporary_directory
 
@@ -73,8 +73,8 @@ class CliTests(unittest.TestCase):
             self.assertIn("UDP companion scan starting", output)
             self.assertIn("-sU -p U:", output)
             self.assertIn("Dry run complete", output)
-            self.assertTrue((Path(temp_dir) / "scans").exists())
-            self.assertTrue((Path(temp_dir) / "reports").exists())
+            self.assertFalse((Path(temp_dir) / "scans").exists())
+            self.assertFalse((Path(temp_dir) / "reports").exists())
 
     def test_missing_nmap_is_graceful_error_before_other_nmap_arg_validation(self) -> None:
         with temporary_directory() as temp_dir:
@@ -135,6 +135,25 @@ class CliTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertIn("UDP companion scan complete: skipped by --no-udp", output)
             self.assertNotIn("-sU", output)
+
+    def test_prune_old_runs_keeps_newest_outputs(self) -> None:
+        with temporary_directory() as temp_dir:
+            output_root = Path(temp_dir)
+            scan_root = output_root / "scans"
+            report_root = output_root / "reports"
+            scan_root.mkdir()
+            report_root.mkdir()
+            for run_id in ("20260101-000000Z", "20260102-000000Z"):
+                (scan_root / run_id).mkdir()
+                (report_root / f"{run_id}.txt").write_text("report", encoding="utf-8")
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                prune_old_runs(output_root, keep_runs=1)
+
+            self.assertFalse((scan_root / "20260101-000000Z").exists())
+            self.assertFalse((report_root / "20260101-000000Z.txt").exists())
+            self.assertTrue((scan_root / "20260102-000000Z").exists())
+            self.assertTrue((report_root / "20260102-000000Z.txt").exists())
 
 
 if __name__ == "__main__":

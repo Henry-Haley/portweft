@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+from collections import deque
 from dataclasses import dataclass
 import os
 import shlex
 import shutil
 import subprocess
 from pathlib import Path
+from typing import TextIO
 
 from portweft import APP_NAME
 from portweft.errors import (
@@ -139,19 +141,40 @@ def build_followup_command(
     xml_path: Path,
     extra: list[str],
 ) -> list[str]:
+    return build_followup_batch_command(
+        parsed,
+        service.host,
+        service.protocol,
+        [service.port],
+        profile_name,
+        xml_path,
+        extra,
+    )
+
+
+def build_followup_batch_command(
+    parsed: argparse.Namespace,
+    host: str,
+    protocol: str,
+    ports: list[int],
+    profile_name: str,
+    xml_path: Path,
+    extra: list[str],
+) -> list[str]:
     profile = SERVICE_PROFILES.get(profile_name, {})
     scripts = ",".join(profile.get("scripts", []))
     command = [resolved_nmap_path(parsed.nmap_path)]
     command.extend(build_base_nmap_args(parsed, extra))
-    if service.protocol.lower() == "udp":
+    port_text = ",".join(str(port) for port in sorted(set(ports)))
+    if protocol.lower() == "udp":
         if "-sU" not in command:
             command.append("-sU")
-        command.extend(["-p", f"U:{service.port}"])
+        command.extend(["-p", f"U:{port_text}"])
     else:
-        command.extend(["-p", str(service.port)])
+        command.extend(["-p", port_text])
     if scripts:
         command.extend(["--script", scripts])
-    command.extend(["-oX", str(xml_path), service.host])
+    command.extend(["-oX", str(xml_path), host])
     return command
 
 
@@ -171,24 +194,60 @@ def resolved_nmap_path(nmap_path: str) -> str:
     return resolve_nmap_path(nmap_path) or nmap_path
 
 
-def run_command(command: list[str], dry_run: bool) -> CommandResult:
+def run_command(
+    command: list[str],
+    dry_run: bool,
+    max_output_lines: int = 12,
+) -> CommandResult:
     print_step(quote_command(command))
     if dry_run:
         return CommandResult(exit_code=0)
 
     try:
-        completed = subprocess.run(command, capture_output=True, text=True)
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
     except FileNotFoundError as error:
         raise NmapNotFoundError(command[0]) from error
 
+    import threading
+
+    stdout_tail: deque[str] = deque(maxlen=max_output_lines)
+    stderr_tail: deque[str] = deque(maxlen=max_output_lines)
+    stdout_reader = threading.Thread(
+        target=read_tail,
+        args=(process.stdout, stdout_tail),
+        daemon=True,
+    )
+    stderr_reader = threading.Thread(
+        target=read_tail,
+        args=(process.stderr, stderr_tail),
+        daemon=True,
+    )
+    stdout_reader.start()
+    stderr_reader.start()
+    exit_code = process.wait()
+    stdout_reader.join()
+    stderr_reader.join()
+
     result = CommandResult(
-        exit_code=completed.returncode,
-        stdout=completed.stdout or "",
-        stderr=completed.stderr or "",
+        exit_code=exit_code,
+        stdout="\n".join(stdout_tail),
+        stderr="\n".join(stderr_tail),
     )
     if not result.ok:
         print_nmap_failure(result)
     return result
+
+
+def read_tail(stream: TextIO | None, tail: deque[str]) -> None:
+    if stream is None:
+        return
+    for line in stream:
+        tail.append(line.rstrip("\r\n"))
 
 
 def print_nmap_failure(result: CommandResult) -> None:

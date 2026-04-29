@@ -10,57 +10,79 @@ from portweft.models import HostObservation, ServiceObservation
 from portweft.profiles import WEB_PORTS
 
 
-def parse_nmap_xml(path: Path) -> list[HostObservation]:
+DEFAULT_MAX_SCRIPT_OUTPUT_CHARS = 8192
+
+
+def parse_nmap_xml(
+    path: Path,
+    max_script_output_chars: int = DEFAULT_MAX_SCRIPT_OUTPUT_CHARS,
+) -> list[HostObservation]:
+    hosts: list[HostObservation] = []
     try:
-        root = ET.parse(path).getroot()
+        events = ET.iterparse(path, events=("start", "end"))
+        _, root = next(events)
+        for event, elem in events:
+            if event != "end" or elem.tag != "host":
+                continue
+            host = parse_host_element(elem, max_script_output_chars)
+            if host is not None:
+                hosts.append(host)
+            elem.clear()
+            root.clear()
+    except StopIteration:
+        return hosts
     except (ET.ParseError, OSError) as error:
         raise NmapXmlParseError(str(path), str(error)) from error
-    hosts: list[HostObservation] = []
-
-    for host_elem in root.findall("host"):
-        address = first_address(host_elem)
-        if not address:
-            continue
-
-        os_family, os_name, os_accuracy, os_source = parse_os_identity(host_elem)
-        host = HostObservation(
-            address=address,
-            hostname=first_hostname(host_elem),
-            status=host_status(host_elem),
-            os_family=os_family,
-            os_name=os_name,
-            os_accuracy=os_accuracy,
-            os_source=os_source,
-        )
-
-        for port_elem in host_elem.findall("ports/port"):
-            state_elem = port_elem.find("state")
-            state = state_elem.attrib.get("state", "") if state_elem is not None else ""
-            if state != "open":
-                continue
-
-            service_elem = port_elem.find("service")
-            service = ServiceObservation(
-                host=address,
-                port=int(port_elem.attrib["portid"]),
-                protocol=port_elem.attrib.get("protocol", "tcp"),
-                state=state,
-                service_name=service_attribute(service_elem, "name"),
-                product=service_attribute(service_elem, "product"),
-                version=service_attribute(service_elem, "version"),
-                extrainfo=service_attribute(service_elem, "extrainfo"),
-                tunnel=service_attribute(service_elem, "tunnel"),
-                scripts=parse_script_output(port_elem),
-            )
-            host.services.append(service)
-
-        if host.os_family == "unknown":
-            host.os_family = infer_os_from_services(host.services)
-            if host.os_family != "unknown":
-                host.os_source = "service-inference"
-        hosts.append(host)
 
     return hosts
+
+
+def parse_host_element(
+    host_elem: ET.Element,
+    max_script_output_chars: int,
+) -> HostObservation | None:
+    address = first_address(host_elem)
+    if not address:
+        return None
+
+    os_family, os_name, os_accuracy, os_source = parse_os_identity(host_elem)
+    host = HostObservation(
+        address=address,
+        hostname=first_hostname(host_elem),
+        status=host_status(host_elem),
+        os_family=os_family,
+        os_name=os_name,
+        os_accuracy=os_accuracy,
+        os_source=os_source,
+    )
+
+    for port_elem in host_elem.findall("ports/port"):
+        state_elem = port_elem.find("state")
+        state = state_elem.attrib.get("state", "") if state_elem is not None else ""
+        if state != "open":
+            continue
+
+        service_elem = port_elem.find("service")
+        service = ServiceObservation(
+            host=address,
+            port=int(port_elem.attrib["portid"]),
+            protocol=port_elem.attrib.get("protocol", "tcp"),
+            state=state,
+            service_name=service_attribute(service_elem, "name"),
+            product=service_attribute(service_elem, "product"),
+            version=service_attribute(service_elem, "version"),
+            extrainfo=service_attribute(service_elem, "extrainfo"),
+            tunnel=service_attribute(service_elem, "tunnel"),
+            scripts=parse_script_output(port_elem, max_script_output_chars),
+        )
+        host.services.append(service)
+
+    if host.os_family == "unknown":
+        host.os_family = infer_os_from_services(host.services)
+        if host.os_family != "unknown":
+            host.os_source = "service-inference"
+
+    return host
 
 
 def service_attribute(service_elem: ET.Element | None, name: str) -> str:
@@ -132,12 +154,29 @@ def infer_os_from_services(services: list[ServiceObservation]) -> str:
     return "unknown"
 
 
-def parse_script_output(port_elem: ET.Element) -> dict[str, str]:
+def parse_script_output(
+    port_elem: ET.Element,
+    max_script_output_chars: int = DEFAULT_MAX_SCRIPT_OUTPUT_CHARS,
+) -> dict[str, str]:
     scripts: dict[str, str] = {}
     for script in port_elem.findall("script"):
         script_id = script.attrib.get("id", "unknown")
-        scripts[script_id] = script.attrib.get("output", "").strip()
+        scripts[script_id] = truncate_script_output(
+            script.attrib.get("output", "").strip(),
+            max_script_output_chars,
+        )
     return scripts
+
+
+def truncate_script_output(output: str, max_chars: int) -> str:
+    if max_chars <= 0:
+        return ""
+    if len(output) <= max_chars:
+        return output
+    marker = "... [truncated]"
+    if max_chars <= len(marker):
+        return output[:max_chars]
+    return f"{output[: max_chars - len(marker)]}{marker}"
 
 
 def merge_hosts(base_hosts: list[HostObservation], update_hosts: list[HostObservation]) -> None:
