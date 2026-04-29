@@ -223,6 +223,18 @@ Keep only the newest output runs:
 python3 -m portweft 192.0.2.10 --keep-runs 10
 ```
 
+Limit each Nmap or Impacket subprocess:
+
+```bash
+python3 -m portweft 192.0.2.10 --scan-timeout 900
+```
+
+Large CIDR ranges require an explicit opt-in:
+
+```bash
+python3 -m portweft 10.0.0.0/16 --allow-large-scan
+```
+
 Adjust the retained NSE script output per script:
 
 ```bash
@@ -291,6 +303,10 @@ response do not get a report. `CUMULATIVE-report.txt` includes every responding
 host from the run. Reruns create a new timestamped report directory instead of
 overwriting an existing host report. Dry-run mode only prints planned commands
 and does not write files.
+
+If temporary XML cleanup fails after reports are written, PortWeft prints a
+warning and exits successfully so completed reports are not treated as failed
+scans.
 
 The initial TCP scan includes Nmap service detection and the low-noise NSE
 `banner` script. If `--impacket` is not used, reports explicitly say
@@ -398,5 +414,7 @@ The default behavior is intentionally conservative:
 - Optional Impacket modules are limited to allowlisted recon commands.
 - NSE script output retained in memory and reports is capped.
 - Impacket output retained in memory and reports is capped.
+- Each scanner subprocess has a PortWeft timeout by default.
+- Large CIDR ranges require `--allow-large-scan`.
 - No vulnerability scripts are selected by default.
 - `--dry-run` shows the exact commands before execution.

@@ -17,6 +17,7 @@ from portweft.errors import (
     NmapArgumentStringError,
     NmapNotFoundError,
     NmapOutputConflictError,
+    NmapPassthroughError,
     PortSpecError,
 )
 from portweft.models import ServiceObservation
@@ -69,6 +70,28 @@ WINDOWS_NMAP_CANDIDATES = (
 
 BANNER_SCRIPT = "banner"
 MAX_PORT = 65535
+COMMAND_TIMEOUT_EXIT_CODE = 124
+
+NMAP_INTEGER_OPTIONS = {
+    "--max-hostgroup": (1, None),
+    "--max-parallelism": (1, None),
+    "--max-retries": (0, None),
+    "--min-hostgroup": (1, None),
+    "--min-parallelism": (1, None),
+    "--version-intensity": (0, 9),
+}
+NMAP_RATE_OPTIONS = {
+    "--max-rate",
+    "--min-rate",
+}
+NMAP_TIME_OPTIONS = {
+    "--host-timeout",
+    "--initial-rtt-timeout",
+    "--max-rtt-timeout",
+    "--max-scan-delay",
+    "--min-rtt-timeout",
+    "--scan-delay",
+}
 
 
 @dataclass
@@ -99,6 +122,83 @@ def validate_nmap_passthrough(args: list[str]) -> None:
             f"{APP_NAME} owns Nmap output flags so XML can be parsed. "
             f"Remove these passthrough flags and use --output-dir instead: {joined}"
         )
+    validate_nmap_passthrough_values(args)
+
+
+def validate_nmap_passthrough_values(args: list[str]) -> None:
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        option, value, consumed_next = split_option_value(arg, args, index)
+        if option in NMAP_INTEGER_OPTIONS:
+            minimum, maximum = NMAP_INTEGER_OPTIONS[option]
+            validate_int_option(option, value, minimum, maximum)
+        elif option in NMAP_RATE_OPTIONS:
+            validate_float_option(option, value)
+        elif option in NMAP_TIME_OPTIONS:
+            validate_time_option(option, value)
+        index += 2 if consumed_next else 1
+
+
+def split_option_value(
+    arg: str,
+    args: list[str],
+    index: int,
+) -> tuple[str, str | None, bool]:
+    if "=" in arg and arg.startswith("--"):
+        option, value = arg.split("=", 1)
+        return option, value, False
+    if arg.startswith("--") and index + 1 < len(args) and not args[index + 1].startswith("-"):
+        return arg, args[index + 1], True
+    return arg, None, False
+
+
+def validate_int_option(
+    option: str,
+    value: str | None,
+    minimum: int,
+    maximum: int | None,
+) -> None:
+    if value is None:
+        raise NmapPassthroughError(f"{option} expects an integer value.")
+    try:
+        number = int(value, 10)
+    except ValueError as error:
+        raise NmapPassthroughError(f"{option} expects an integer value: {value}") from error
+    if number < minimum:
+        raise NmapPassthroughError(f"{option} must be at least {minimum}: {value}")
+    if maximum is not None and number > maximum:
+        raise NmapPassthroughError(f"{option} must be at most {maximum}: {value}")
+
+
+def validate_float_option(option: str, value: str | None) -> None:
+    if value is None:
+        raise NmapPassthroughError(f"{option} expects a numeric value.")
+    try:
+        number = float(value)
+    except ValueError as error:
+        raise NmapPassthroughError(f"{option} expects a numeric value: {value}") from error
+    if number <= 0:
+        raise NmapPassthroughError(f"{option} must be greater than zero: {value}")
+
+
+def validate_time_option(option: str, value: str | None) -> None:
+    if value is None:
+        raise NmapPassthroughError(f"{option} expects a time value.")
+    units = ("ms", "s", "m", "h")
+    number_text = value
+    for unit in units:
+        if value.endswith(unit):
+            number_text = value[: -len(unit)]
+            break
+    try:
+        number = float(number_text)
+    except ValueError as error:
+        raise NmapPassthroughError(
+            f"{option} expects a time value like 500ms, 30s, 5m, or 1h: {value}"
+        ) from error
+    if number <= 0:
+        raise NmapPassthroughError(f"{option} must be greater than zero: {value}")
 
 
 def udp_default_ports_text() -> str:
@@ -355,6 +455,7 @@ def resolved_nmap_path(nmap_path: str) -> str:
 def run_command(
     command: list[str],
     dry_run: bool,
+    timeout_seconds: float | None = None,
     max_output_lines: int = 12,
 ) -> CommandResult:
     print_step(quote_command(command))
@@ -387,18 +488,59 @@ def run_command(
     )
     stdout_reader.start()
     stderr_reader.start()
-    exit_code = process.wait()
+    timed_out = False
+    try:
+        exit_code = process.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        terminate_process(process)
+        exit_code = COMMAND_TIMEOUT_EXIT_CODE
+    except KeyboardInterrupt:
+        terminate_process(process)
+        raise
     stdout_reader.join()
     stderr_reader.join()
+    close_process_streams(process)
 
     result = CommandResult(
         exit_code=exit_code,
         stdout="\n".join(stdout_tail),
         stderr="\n".join(stderr_tail),
     )
+    if timed_out:
+        print_error(f"Nmap command timed out after {format_timeout(timeout_seconds)}.")
     if not result.ok:
         print_nmap_failure(result)
     return result
+
+
+def terminate_process(process: subprocess.Popen) -> None:
+    try:
+        process.terminate()
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+    except OSError:
+        pass
+
+
+def close_process_streams(process: subprocess.Popen) -> None:
+    for stream in (process.stdout, process.stderr):
+        if stream is None:
+            continue
+        try:
+            stream.close()
+        except OSError:
+            pass
+
+
+def format_timeout(timeout_seconds: float | None) -> str:
+    if timeout_seconds is None:
+        return "the configured timeout"
+    if timeout_seconds == int(timeout_seconds):
+        return f"{int(timeout_seconds)} seconds"
+    return f"{timeout_seconds:g} seconds"
 
 
 def read_tail(stream: TextIO | None, tail: deque[str]) -> None:

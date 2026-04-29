@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import io
+import subprocess
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,6 +13,7 @@ from portweft.errors import (
     NmapArgumentStringError,
     NmapNotFoundError,
     NmapOutputConflictError,
+    NmapPassthroughError,
     PortSpecError,
 )
 from portweft.models import ServiceObservation
@@ -48,8 +50,31 @@ class FakeProcess:
         self.stdout = io.StringIO(stdout)
         self.stderr = io.StringIO(stderr)
 
-    def wait(self) -> int:
+    def wait(self, timeout=None) -> int:
+        _ = timeout
         return self.returncode
+
+    def terminate(self) -> None:
+        return None
+
+    def kill(self) -> None:
+        return None
+
+
+class TimeoutProcess(FakeProcess):
+    def __init__(self) -> None:
+        super().__init__(returncode=-15)
+        self.wait_calls = 0
+        self.terminated = False
+
+    def wait(self, timeout=None) -> int:
+        self.wait_calls += 1
+        if self.wait_calls == 1:
+            raise subprocess.TimeoutExpired("nmap", timeout)
+        return self.returncode
+
+    def terminate(self) -> None:
+        self.terminated = True
 
 
 class NmapRunnerTests(unittest.TestCase):
@@ -66,6 +91,14 @@ class NmapRunnerTests(unittest.TestCase):
     def test_validate_nmap_passthrough_rejects_output_flags(self) -> None:
         with self.assertRaises(NmapOutputConflictError):
             validate_nmap_passthrough(["-T4", "-oX", "scan.xml"])
+
+    def test_validate_nmap_passthrough_rejects_bad_numeric_values(self) -> None:
+        with self.assertRaises(NmapPassthroughError):
+            validate_nmap_passthrough(["--min-parallelism", "nope"])
+
+    def test_validate_nmap_passthrough_rejects_bad_timeout_values(self) -> None:
+        with self.assertRaises(NmapPassthroughError):
+            validate_nmap_passthrough(["--host-timeout", "notatime"])
 
     def test_parse_port_spec_accepts_ranges_and_comma_lists(self) -> None:
         self.assertEqual(parse_port_spec("1-3,65342"), {1, 2, 3, 65342})
@@ -283,6 +316,18 @@ class NmapRunnerTests(unittest.TestCase):
         self.assertNotIn("line 0", result.stderr)
         self.assertIn("line 17", result.stderr)
         self.assertIn("line 19", result.stderr)
+
+    def test_run_command_times_out_and_terminates_process(self) -> None:
+        process = TimeoutProcess()
+
+        with patch("portweft.nmap_runner.subprocess.Popen", return_value=process):
+            stderr = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+                result = run_command(["nmap"], dry_run=False, timeout_seconds=0.01)
+
+        self.assertEqual(result.exit_code, 124)
+        self.assertTrue(process.terminated)
+        self.assertIn("timed out", stderr.getvalue())
 
     def test_extract_nmap_error_uses_stdout_when_stderr_is_empty(self) -> None:
         result = SimpleNamespace(exit_code=2, stdout="bad target\n", stderr="")

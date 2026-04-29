@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 from collections import defaultdict
 import datetime as dt
+import ipaddress
+import shlex
 import shutil
 import sys
 from pathlib import Path
@@ -12,6 +14,7 @@ from pathlib import Path
 from portweft import APP_NAME
 from portweft.errors import (
     ImpacketUnavailableError,
+    NmapArgumentStringError,
     OutputDirectoryError,
     PortSpecError,
     PortWeftError,
@@ -67,6 +70,20 @@ from portweft.utils import (
 
 
 DEFAULT_TOP_PORTS = 1000
+DEFAULT_SCAN_TIMEOUT_SECONDS = 1800.0
+DEFAULT_MAX_SCAN_TARGETS = 4096
+PORTWEFT_BANNER = r"""
+   ____             __ _       __     ______
+  / __ \____  _____/ /| |     / /__  / __/ /_
+ / /_/ / __ \/ ___/ __/ | /| / / _ \/ /_/ __/
+/ ____/ /_/ / /  / /_ | |/ |/ /  __/ __/ /_
+/_/    \____/_/   \__/ |__/|__/\___/_/  \__/
+
++--------------------------------+
+|        P O R T W E F T         |
+|     weaving connections...      |
++--------------------------------+
+""".strip("\n")
 PORTWEFT_OPTIONS = {
     "-h",
     "--help",
@@ -87,6 +104,9 @@ PORTWEFT_OPTIONS = {
     "--udp-ports",
     "--no-service-version",
     "--dry-run",
+    "--scan-timeout",
+    "--max-scan-targets",
+    "--allow-large-scan",
 }
 PORTWEFT_OPTIONS_WITH_VALUES = {
     "-p",
@@ -99,6 +119,9 @@ PORTWEFT_OPTIONS_WITH_VALUES = {
     "--max-impacket-output-chars",
     "--nmap-path",
     "--udp-ports",
+    "--nmap-args",
+    "--scan-timeout",
+    "--max-scan-targets",
 }
 NMAP_OPTIONS_WITH_VALUES = {
     "-D",
@@ -144,7 +167,16 @@ NMAP_OPTIONS_WITH_VALUES = {
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="portweft",
-        description="Run Nmap, parse XML, and gather facts for open services.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            f"{PORTWEFT_BANNER}\n\n"
+            "Run Nmap, parse XML, and gather facts for open services. "
+            "Authorized use only."
+        ),
+        epilog=(
+            "Use PortWeft only on systems you own, administer, or have explicit "
+            "permission to test."
+        ),
         allow_abbrev=False,
     )
     parser.add_argument("targets", help="IP, domain, comma-separated targets, or CIDR range")
@@ -158,9 +190,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--nmap-args",
-        nargs="*",
-        default=[],
-        help="Nmap arguments to pass to initial and follow-up scans",
+        default="",
+        help=(
+            "Quoted Nmap argument string to pass through; raw Nmap flags can also "
+            "be placed directly in the command"
+        ),
     )
     parser.add_argument(
         "--output-dir",
@@ -231,6 +265,29 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print planned Nmap commands without executing them",
     )
+    parser.add_argument(
+        "--scan-timeout",
+        type=nonnegative_float,
+        default=DEFAULT_SCAN_TIMEOUT_SECONDS,
+        help=(
+            "Maximum seconds per Nmap/Impacket command; 0 disables the PortWeft "
+            f"timeout (default: {int(DEFAULT_SCAN_TIMEOUT_SECONDS)})"
+        ),
+    )
+    parser.add_argument(
+        "--max-scan-targets",
+        type=positive_int,
+        default=DEFAULT_MAX_SCAN_TARGETS,
+        help=(
+            "Maximum estimated targets allowed without --allow-large-scan "
+            f"(default: {DEFAULT_MAX_SCAN_TARGETS})"
+        ),
+    )
+    parser.add_argument(
+        "--allow-large-scan",
+        action="store_true",
+        help="Allow target lists or CIDR ranges above --max-scan-targets",
+    )
     return parser
 
 
@@ -244,51 +301,25 @@ def positive_int(value: str) -> int:
     return parsed
 
 
+def nonnegative_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("must be a number") from error
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be zero or greater")
+    return parsed
+
+
 def main(argv: list[str] | None = None) -> int:
     try:
         return run(argv)
+    except KeyboardInterrupt:
+        print_error("Interrupted by user; stopping active scan.")
+        return 130
     except PortWeftError as error:
         print_error(str(error))
         return error.exit_code
-
-
-def extract_inline_nmap_args(argv: list[str]) -> tuple[list[str], list[str]]:
-    """Pull dash-prefixed values after --nmap-args without confusing argparse."""
-    cleaned: list[str] = []
-    extracted: list[str] = []
-    index = 0
-    while index < len(argv):
-        token = argv[index]
-        if token == "--nmap-args":
-            index += 1
-            expecting_value = False
-            while index < len(argv):
-                current = argv[index]
-                if is_portweft_option(current):
-                    break
-                if not current.startswith("-") and not expecting_value:
-                    break
-                extracted.append(current)
-                expecting_value = nmap_option_expects_value(current)
-                index += 1
-            continue
-        if token.startswith("--nmap-args="):
-            extracted.append(token.split("=", 1)[1])
-            index += 1
-            continue
-        cleaned.append(token)
-        index += 1
-    return cleaned, split_nmap_arg_values(extracted)
-
-
-def split_nmap_arg_values(values: list[str] | str) -> list[str]:
-    if isinstance(values, str):
-        return split_nmap_args(values)
-
-    args: list[str] = []
-    for value in values:
-        args.extend(split_nmap_args(value))
-    return args
 
 
 def extract_raw_nmap_args(argv: list[str]) -> tuple[list[str], list[str]]:
@@ -301,9 +332,26 @@ def extract_raw_nmap_args(argv: list[str]) -> tuple[list[str], list[str]]:
         if token == "--":
             extracted.extend(argv[index + 1 :])
             break
+        if token == "--nmap-args":
+            nmap_args, next_index = consume_nmap_args(argv, index + 1)
+            if nmap_args:
+                cleaned.append(f"--nmap-args={shlex.join(nmap_args)}")
+                index = next_index
+                continue
+            if index + 1 < len(argv):
+                cleaned.append(f"--nmap-args={argv[index + 1]}")
+                index += 2
+                continue
+            cleaned.append(token)
+            index += 1
+            continue
         if is_portweft_option(token) or is_portweft_attached_option(token):
             cleaned.append(token)
-            if portweft_option_expects_value(token) and index + 1 < len(argv):
+            if (
+                portweft_option_expects_value(token)
+                and index + 1 < len(argv)
+                and not is_portweft_option(argv[index + 1])
+            ):
                 cleaned.append(argv[index + 1])
                 index += 2
                 continue
@@ -320,6 +368,22 @@ def extract_raw_nmap_args(argv: list[str]) -> tuple[list[str], list[str]]:
         cleaned.append(token)
         index += 1
     return cleaned, extracted
+
+
+def consume_nmap_args(argv: list[str], start_index: int) -> tuple[list[str], int]:
+    consumed: list[str] = []
+    index = start_index
+    expecting_value = False
+    while index < len(argv):
+        token = argv[index]
+        if is_portweft_option(token):
+            break
+        if not token.startswith("-") and not expecting_value:
+            break
+        consumed.append(token)
+        expecting_value = nmap_option_expects_value(token)
+        index += 1
+    return consumed, index
 
 
 def is_portweft_option(token: str) -> bool:
@@ -405,17 +469,71 @@ def configure_udp_companion(
     return ""
 
 
+def validate_flag_conflicts(
+    parser: argparse.ArgumentParser,
+    parsed: argparse.Namespace,
+    argv: list[str],
+) -> None:
+    if parsed.ports and parsed.top_ports:
+        parser.error("Use either -p/--ports or --top-ports, not both.")
+    if parsed.no_udp and option_was_supplied(argv, "--udp-ports"):
+        parser.error("Use either --no-udp or --udp-ports, not both.")
+
+
+def validate_nmap_args_do_not_contain_portweft_options(args: list[str]) -> None:
+    conflicts = [arg for arg in args if is_portweft_option(arg)]
+    if not conflicts:
+        return
+    joined = ", ".join(conflicts)
+    raise NmapArgumentStringError(
+        "PortWeft options cannot be embedded inside --nmap-args: "
+        f"{joined}. Put PortWeft options outside --nmap-args or pass raw Nmap "
+        "flags directly."
+    )
+
+
+def enforce_target_limit(
+    parser: argparse.ArgumentParser,
+    targets: list[str],
+    max_scan_targets: int,
+    allow_large_scan: bool,
+) -> None:
+    estimated = estimate_target_count(targets)
+    if allow_large_scan or estimated <= max_scan_targets:
+        return
+    parser.error(
+        f"Target selection expands to about {estimated} target(s), above "
+        f"--max-scan-targets {max_scan_targets}. Use --allow-large-scan to proceed."
+    )
+
+
+def estimate_target_count(targets: list[str]) -> int:
+    total = 0
+    for target in targets:
+        try:
+            total += ipaddress.ip_network(target, strict=False).num_addresses
+        except ValueError:
+            total += 1
+    return total
+
+
+def command_timeout(parsed: argparse.Namespace) -> float | None:
+    if parsed.scan_timeout <= 0:
+        return None
+    return parsed.scan_timeout
+
+
 def run(argv: list[str] | None = None) -> int:
     parser = build_parser()
     effective_argv = list(sys.argv[1:] if argv is None else argv)
     if not effective_argv:
-        parser.print_help()
-        return 0
+        parser.print_help(sys.stderr)
+        return 2
 
-    effective_argv, extracted_nmap_args = extract_inline_nmap_args(effective_argv)
     effective_argv = normalize_top_ports_flag(effective_argv)
     effective_argv, raw_nmap_args = extract_raw_nmap_args(effective_argv)
     parsed, unknown_nmap_args = parser.parse_known_args(effective_argv)
+    validate_flag_conflicts(parser, parsed, effective_argv)
     if parsed.keep_runs < 0:
         parser.error("--keep-runs must be zero or greater.")
     if parsed.max_script_output_chars < 0:
@@ -428,11 +546,12 @@ def run(argv: list[str] | None = None) -> int:
         parsed,
         option_was_supplied(effective_argv, "--udp-ports"),
     )
+    parsed_nmap_args = split_nmap_args(parsed.nmap_args)
+    validate_nmap_args_do_not_contain_portweft_options(parsed_nmap_args)
     ensure_nmap_available(parsed.nmap_path, parsed.dry_run)
     extra_nmap_args = normalize_unknown_nmap_args(
-        extracted_nmap_args
+        parsed_nmap_args
         + raw_nmap_args
-        + split_nmap_arg_values(parsed.nmap_args)
         + normalize_unknown_nmap_args(unknown_nmap_args)
     )
     validate_nmap_passthrough(extra_nmap_args)
@@ -445,6 +564,12 @@ def run(argv: list[str] | None = None) -> int:
     nmap_targets = scan_targets(resolutions)
     if not nmap_targets:
         raise TargetResolutionError("No valid targets to scan after DNS resolution.")
+    enforce_target_limit(
+        parser,
+        nmap_targets,
+        parsed.max_scan_targets,
+        parsed.allow_large_scan,
+    )
     if has_ipv6_target(nmap_targets) and "-6" not in extra_nmap_args:
         extra_nmap_args = ["-6", *extra_nmap_args]
     report_targets = original_targets(resolutions)
@@ -462,6 +587,7 @@ def run(argv: list[str] | None = None) -> int:
     initial_xml = scan_dir / f"{run_id}-initial.xml"
     udp_xml = scan_dir / f"{run_id}-udp.xml"
 
+    print(PORTWEFT_BANNER, flush=True)
     print_step(f"{APP_NAME} run {run_id} starting")
     print_step(f"Scan started (GMT): {scan_started_at.strftime('%Y-%m-%d %H:%M:%S GMT')}")
     print_step(f"Targets: {', '.join(report_targets)}")
@@ -469,6 +595,7 @@ def run(argv: list[str] | None = None) -> int:
 
     if not parsed.dry_run:
         prepare_output_dirs(scan_dir, report_dir)
+    timeout_seconds = command_timeout(parsed)
 
     initial_command = build_initial_command(
         parsed,
@@ -477,7 +604,11 @@ def run(argv: list[str] | None = None) -> int:
         extra_nmap_args,
     )
     print_step("Initial Nmap scan starting")
-    initial_result = run_command(initial_command, parsed.dry_run)
+    initial_result = run_command(
+        initial_command,
+        parsed.dry_run,
+        timeout_seconds=timeout_seconds,
+    )
     if not initial_result.ok:
         return initial_result.exit_code
     print_section_done("Initial Nmap scan", f"XML saved to {initial_xml}")
@@ -488,7 +619,11 @@ def run(argv: list[str] | None = None) -> int:
     else:
         udp_command = build_udp_command(parsed, nmap_targets, udp_xml, extra_nmap_args)
         print_step("UDP companion scan starting")
-        udp_result = run_command(udp_command, parsed.dry_run)
+        udp_result = run_command(
+            udp_command,
+            parsed.dry_run,
+            timeout_seconds=timeout_seconds,
+        )
         if udp_result.ok:
             print_section_done("UDP companion scan", f"XML saved to {udp_xml}")
         else:
@@ -510,8 +645,6 @@ def run(argv: list[str] | None = None) -> int:
             annotate_hosts_with_targets(udp_hosts, resolutions)
             merge_hosts(hosts, udp_hosts)
         except PortWeftError as error:
-            from portweft.utils import print_error
-
             print_error(str(error))
             print_step("UDP XML parse failed; continuing with TCP results")
         else:
@@ -529,9 +662,17 @@ def run(argv: list[str] | None = None) -> int:
             print_section_done("Impacket recon", "skipped by --no-follow-up")
             impacket_status = "skipped by --no-follow-up"
     else:
-        run_followups(parsed, extra_nmap_args, scan_dir, hosts, open_services, resolutions)
+        run_followups(
+            parsed,
+            extra_nmap_args,
+            scan_dir,
+            hosts,
+            open_services,
+            resolutions,
+            timeout_seconds,
+        )
         if parsed.impacket:
-            impacket_status = run_impacket_recon(parsed, hosts)
+            impacket_status = run_impacket_recon(parsed, hosts, timeout_seconds)
 
     print_step(f"Writing reports: {report_dir}")
     if parsed.json:
@@ -551,7 +692,11 @@ def run(argv: list[str] | None = None) -> int:
             impacket_status,
         )
     print_section_done("Report writing", f"{len(written_reports)} file(s) in {report_dir}")
-    cleanup_scan_outputs(scan_dir)
+    try:
+        cleanup_scan_outputs(scan_dir)
+    except OutputDirectoryError as error:
+        print_error(str(error))
+        print_step("Temporary XML cleanup failed; reports were kept")
     prune_old_runs(output_root, parsed.keep_runs)
     print_section_done(f"{APP_NAME} run")
     return 0
@@ -618,6 +763,7 @@ def run_followups(
     hosts: list[HostObservation],
     open_services: list[ServiceObservation],
     resolutions: list[TargetResolution],
+    timeout_seconds: float | None = None,
 ) -> None:
     groups: dict[tuple[str, str, str], list[ServiceObservation]] = defaultdict(list)
     for service in open_services:
@@ -644,7 +790,11 @@ def run_followups(
             followup_xml,
             extra_nmap_args,
         )
-        followup_result = run_command(command, parsed.dry_run)
+        followup_result = run_command(
+            command,
+            parsed.dry_run,
+            timeout_seconds=timeout_seconds,
+        )
         if not followup_result.ok:
             print_step(f"Follow-up profile failed: {profile} {host}:{port_text}/{protocol}")
             continue
@@ -652,8 +802,6 @@ def run_followups(
             update_hosts = parse_nmap_xml(followup_xml, parsed.max_script_output_chars)
             annotate_hosts_with_targets(update_hosts, resolutions)
         except PortWeftError as error:
-            from portweft.utils import print_error
-
             print_error(str(error))
             print_step(
                 f"Follow-up profile parse failed: {profile} "
@@ -673,6 +821,7 @@ def run_followups(
 def run_impacket_recon(
     parsed: argparse.Namespace,
     hosts: list[HostObservation],
+    timeout_seconds: float | None = None,
 ) -> str:
     availability = getattr(parsed, "impacket_availability", None)
     if availability is None:
@@ -711,6 +860,7 @@ def run_impacket_recon(
             module_name,
             service,
             parsed.max_impacket_output_chars,
+            timeout_seconds,
         )
         if result.skipped:
             print_step(f"Impacket {module_name} skipped for {target}: {result.reason}")

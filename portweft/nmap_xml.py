@@ -18,6 +18,7 @@ def parse_nmap_xml(
     max_script_output_chars: int = DEFAULT_MAX_SCRIPT_OUTPUT_CHARS,
 ) -> list[HostObservation]:
     hosts: list[HostObservation] = []
+    events = None
     try:
         events = ET.iterparse(path, events=("start", "end"))
         _, root = next(events)
@@ -33,6 +34,10 @@ def parse_nmap_xml(
         return hosts
     except (ET.ParseError, OSError) as error:
         raise NmapXmlParseError(str(path), str(error)) from error
+    finally:
+        close = getattr(events, "close", None)
+        if close is not None:
+            close()
 
     return hosts
 

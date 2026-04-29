@@ -19,20 +19,22 @@ from portweft.cli import (
     prune_old_runs,
     unique_run_id,
 )
+from portweft.errors import OutputDirectoryError
 from portweft.impacket_runner import ImpacketAvailability
 from portweft.models import HostObservation, ServiceObservation
 from tests.helpers import temporary_directory
 
 
 class CliTests(unittest.TestCase):
-    def test_no_args_prints_help_and_exits_zero(self) -> None:
-        stdout = io.StringIO()
-        with contextlib.redirect_stdout(stdout):
+    def test_no_args_prints_help_and_exits_two(self) -> None:
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
             exit_code = main([])
 
-        output = stdout.getvalue()
-        self.assertEqual(exit_code, 0)
+        output = stderr.getvalue()
+        self.assertEqual(exit_code, 2)
         self.assertIn("usage: portweft", output)
+        self.assertIn("P O R T W E F T", output)
         self.assertIn("targets", output)
         self.assertIn("--dry-run", output)
 
@@ -45,8 +47,18 @@ class CliTests(unittest.TestCase):
         output = stdout.getvalue()
         self.assertEqual(raised.exception.code, 0)
         self.assertIn("usage: portweft", output)
+        self.assertIn("P O R T W E F T", output)
         self.assertIn("--udp-ports", output)
         self.assertIn("--impacket", output)
+
+    def test_keyboard_interrupt_returns_standard_interrupt_exit_code(self) -> None:
+        stderr = io.StringIO()
+        with patch("portweft.cli.run", side_effect=KeyboardInterrupt):
+            with contextlib.redirect_stderr(stderr):
+                exit_code = main(["127.0.0.1"])
+
+        self.assertEqual(exit_code, 130)
+        self.assertIn("Interrupted by user", stderr.getvalue())
 
     def test_package_directory_invocation_prints_help(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]
@@ -57,9 +69,9 @@ class CliTests(unittest.TestCase):
             text=True,
         )
 
-        self.assertEqual(completed.returncode, 0)
-        self.assertIn("usage: portweft", completed.stdout)
-        self.assertIn("targets", completed.stdout)
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("usage: portweft", completed.stderr)
+        self.assertIn("targets", completed.stderr)
 
     def test_dry_run_prints_command_and_completes_without_nmap(self) -> None:
         with temporary_directory() as temp_dir:
@@ -281,6 +293,44 @@ class CliTests(unittest.TestCase):
         self.assertIn("Resolved scan targets: 127.0.0.1", output)
         self.assertIn("--max-retries 2 --script banner", output)
 
+    def test_malformed_nmap_args_exit_before_scan(self) -> None:
+        with temporary_directory() as temp_dir:
+            stderr = io.StringIO()
+            with patch("portweft.cli.run_command") as run_command:
+                with contextlib.redirect_stderr(stderr):
+                    exit_code = main(
+                        [
+                            "127.0.0.1",
+                            "--nmap-args",
+                            '"unterminated',
+                            "--dry-run",
+                            "--output-dir",
+                            temp_dir,
+                        ]
+                    )
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("Could not parse --nmap-args", stderr.getvalue())
+        run_command.assert_not_called()
+
+    def test_nmap_args_cannot_swallow_portweft_options(self) -> None:
+        with temporary_directory() as temp_dir:
+            stderr = io.StringIO()
+            with patch("portweft.cli.run_command") as run_command:
+                with contextlib.redirect_stderr(stderr):
+                    exit_code = main(
+                        [
+                            "127.0.0.1",
+                            "--nmap-args",
+                            "unterminated --dry-run --output-dir "
+                            f"{temp_dir}",
+                        ]
+                    )
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("cannot be embedded inside --nmap-args", stderr.getvalue())
+        run_command.assert_not_called()
+
     def test_raw_nmap_args_with_values_can_appear_before_target(self) -> None:
         with temporary_directory() as temp_dir:
             stdout = io.StringIO()
@@ -300,6 +350,77 @@ class CliTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn("Resolved scan targets: 127.0.0.1", output)
         self.assertIn("--max-retries 2 --script banner", output)
+
+    def test_conflicting_ports_and_top_ports_exit_before_scan(self) -> None:
+        with temporary_directory() as temp_dir:
+            stderr = io.StringIO()
+            with patch("portweft.cli.run_command") as run_command:
+                with contextlib.redirect_stderr(stderr):
+                    with self.assertRaises(SystemExit) as raised:
+                        main(
+                            [
+                                "127.0.0.1",
+                                "-p",
+                                "80",
+                                "--top-ports",
+                                "10",
+                                "--dry-run",
+                                "--output-dir",
+                                temp_dir,
+                            ]
+                        )
+
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("Use either -p/--ports or --top-ports", stderr.getvalue())
+        run_command.assert_not_called()
+
+    def test_no_udp_and_udp_ports_conflict_exit_before_scan(self) -> None:
+        with temporary_directory() as temp_dir:
+            stderr = io.StringIO()
+            with patch("portweft.cli.run_command") as run_command:
+                with contextlib.redirect_stderr(stderr):
+                    with self.assertRaises(SystemExit) as raised:
+                        main(
+                            [
+                                "127.0.0.1",
+                                "--no-udp",
+                                "--udp-ports",
+                                "53",
+                                "--dry-run",
+                                "--output-dir",
+                                temp_dir,
+                            ]
+                        )
+
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("Use either --no-udp or --udp-ports", stderr.getvalue())
+        run_command.assert_not_called()
+
+    def test_large_cidr_requires_explicit_override(self) -> None:
+        stderr = io.StringIO()
+        with patch("portweft.cli.run_command") as run_command:
+            with contextlib.redirect_stderr(stderr):
+                with self.assertRaises(SystemExit) as raised:
+                    main(["10.0.0.0/19", "--dry-run", "--no-udp"])
+
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("--allow-large-scan", stderr.getvalue())
+        run_command.assert_not_called()
+
+    def test_large_cidr_override_allows_dry_run(self) -> None:
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            exit_code = main(
+                [
+                    "10.0.0.0/19",
+                    "--dry-run",
+                    "--no-udp",
+                    "--allow-large-scan",
+                ]
+            )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("10.0.0.0/19", stdout.getvalue())
 
     def test_resolution_failure_skips_target_and_continues(self) -> None:
         with temporary_directory() as temp_dir:
@@ -462,6 +583,37 @@ class CliTests(unittest.TestCase):
             cumulative["impacket_status"],
             "not requested (--impacket not used)",
         )
+
+    def test_cleanup_failure_after_reports_does_not_fail_completed_scan(self) -> None:
+        host = HostObservation(address="192.0.2.10", status="up")
+        with temporary_directory() as temp_dir:
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with patch("portweft.cli.ensure_nmap_available"):
+                with patch(
+                    "portweft.cli.run_command",
+                    return_value=SimpleNamespace(ok=True, exit_code=0),
+                ):
+                    with patch("portweft.cli.parse_nmap_xml", return_value=[host]):
+                        with patch(
+                            "portweft.cli.cleanup_scan_outputs",
+                            side_effect=OutputDirectoryError("scan-dir", "locked"),
+                        ):
+                            with contextlib.redirect_stdout(stdout):
+                                with contextlib.redirect_stderr(stderr):
+                                    exit_code = main(
+                                        [
+                                            "192.0.2.10",
+                                            "--no-udp",
+                                            "--no-follow-up",
+                                            "--output-dir",
+                                            temp_dir,
+                                        ]
+                                    )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Could not prepare output directory", stderr.getvalue())
+        self.assertIn("Temporary XML cleanup failed", stdout.getvalue())
 
     def test_prune_old_runs_keeps_newest_outputs(self) -> None:
         with temporary_directory() as temp_dir:

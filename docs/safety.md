@@ -40,6 +40,10 @@ banners are captured when available. If the operator supplies a custom
 User-provided Nmap flags are passed through where possible. PortWeft blocks
 Nmap output flags because it owns XML output generation.
 
+Malformed `--nmap-args` strings and common invalid passthrough timing or
+parallelism values are rejected before scanning starts. Raw Nmap scan choices
+remain under operator control.
+
 ## Default UDP Behavior
 
 UDP is scanned by default with a small curated port set:
@@ -92,6 +96,18 @@ UDP companion scan failed; continuing with available TCP results
 Nmap's error text is printed so the operator can decide whether to rerun with
 different privileges or flags.
 
+## Runtime Guardrails
+
+PortWeft applies a default timeout to each Nmap or Impacket subprocess. Operators
+can tune it with `--scan-timeout`, or set `--scan-timeout 0` to disable the
+PortWeft-managed timeout when a long-running authorized scan requires it.
+
+Large target expansions are blocked by default. Use `--allow-large-scan` only
+when the larger range is explicitly in scope.
+
+Ctrl+C exits cleanly with code `130` and attempts to stop the active scanner
+subprocess.
+
 ## Optional Impacket Recon
 
 Impacket recon is disabled by default. When enabled with `--impacket`, PortWeft
@@ -118,5 +134,6 @@ and continues.
 - Use `--no-udp` when UDP is outside scope.
 - Use `--impacket` only when SMB/RPC enumeration is in scope.
 - Use `-p` or `--top-ports` to keep scan scope explicit.
+- Use `--allow-large-scan` only for approved large ranges.
 - Keep Nmap timing flags appropriate for the environment.
 - Treat all targets as requiring authorization.

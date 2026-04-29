@@ -46,6 +46,14 @@ class TargetResolutionTests(unittest.TestCase):
         self.assertIn("name not known", resolutions[0].error)
         self.assertEqual(scan_targets(resolutions), [])
 
+    def test_invalid_ip_like_target_does_not_query_dns(self) -> None:
+        with patch("portweft.targets.socket.getaddrinfo") as getaddrinfo:
+            resolutions = resolve_targets(["999.999.999.999"])
+
+        getaddrinfo.assert_not_called()
+        self.assertFalse(resolutions[0].ok)
+        self.assertIn("invalid IP address", resolutions[0].error)
+
     def test_mix_of_ip_and_domain_preserves_original_target(self) -> None:
         with patch(
             "portweft.targets.socket.getaddrinfo",

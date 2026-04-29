@@ -13,7 +13,7 @@ from portweft.errors import ReportWriteError
 from portweft.matcher import match_profiles
 from portweft.models import HostObservation, ServiceObservation
 from portweft.targets import TargetResolution, successful_resolutions
-from portweft.utils import safe_name
+from portweft.utils import safe_name, sanitize_text
 
 
 IMPACKET_SCRIPT_PREFIX = "impacket-"
@@ -131,7 +131,7 @@ def write_lines(report_path: Path, lines: Iterator[str]) -> None:
     try:
         with report_path.open("w", encoding="utf-8") as report:
             for line in lines:
-                report.write(f"{line}\n")
+                report.write(f"{sanitize_text(line)}\n")
     except OSError as error:
         raise ReportWriteError(str(report_path), str(error)) from error
 

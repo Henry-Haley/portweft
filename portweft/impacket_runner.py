@@ -16,6 +16,7 @@ from portweft.utils import print_error, print_step, quote_command
 
 DEFAULT_MAX_IMPACKET_OUTPUT_CHARS = 8192
 IMPACKET_INSTALL_HINT = "Install with pip install .[impacket]"
+COMMAND_TIMEOUT_EXIT_CODE = 124
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,6 +144,7 @@ def run_impacket_module(
     module_name: str,
     service: ServiceObservation,
     max_output_chars: int = DEFAULT_MAX_IMPACKET_OUTPUT_CHARS,
+    timeout_seconds: float | None = None,
 ) -> ImpacketResult:
     if not module_supports_service(module_name, service):
         return ImpacketResult(
@@ -162,17 +164,18 @@ def run_impacket_module(
         )
 
     command = build_impacket_command(module_name, executable, service)
-    return run_impacket_command(module_name, command, max_output_chars)
+    return run_impacket_command(module_name, command, max_output_chars, timeout_seconds)
 
 
 def run_impacket_command(
     module_name: str,
     command: list[str],
     max_output_chars: int = DEFAULT_MAX_IMPACKET_OUTPUT_CHARS,
+    timeout_seconds: float | None = None,
 ) -> ImpacketResult:
     print_step(quote_command(command))
     try:
-        completed = run_bounded_process(command, max_output_chars)
+        completed = run_bounded_process(command, max_output_chars, timeout_seconds)
     except FileNotFoundError:
         return ImpacketResult(
             module_name=module_name,
@@ -187,6 +190,8 @@ def run_impacket_command(
         exit_code=completed.exit_code,
         output=output,
     )
+    if completed.exit_code == COMMAND_TIMEOUT_EXIT_CODE:
+        print_error(f"Impacket {module_name} timed out.")
     if not result.ok:
         print_error(f"Impacket {module_name} returned a non-zero exit code.")
         if output:
@@ -197,6 +202,7 @@ def run_impacket_command(
 def run_bounded_process(
     command: list[str],
     max_output_chars: int,
+    timeout_seconds: float | None = None,
 ) -> ProcessResult:
     process = subprocess.Popen(
         command,
@@ -218,14 +224,43 @@ def run_bounded_process(
     )
     stdout_reader.start()
     stderr_reader.start()
-    exit_code = process.wait()
+    try:
+        exit_code = process.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        terminate_process(process)
+        exit_code = COMMAND_TIMEOUT_EXIT_CODE
+    except KeyboardInterrupt:
+        terminate_process(process)
+        raise
     stdout_reader.join()
     stderr_reader.join()
+    close_process_streams(process)
     return ProcessResult(
         exit_code=exit_code,
         stdout=stdout_parts[0] if stdout_parts else "",
         stderr=stderr_parts[0] if stderr_parts else "",
     )
+
+
+def terminate_process(process: subprocess.Popen) -> None:
+    try:
+        process.terminate()
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+    except OSError:
+        pass
+
+
+def close_process_streams(process: subprocess.Popen) -> None:
+    for stream in (process.stdout, process.stderr):
+        if stream is None:
+            continue
+        try:
+            stream.close()
+        except OSError:
+            pass
 
 
 def process_output(

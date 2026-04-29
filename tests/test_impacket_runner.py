@@ -40,8 +40,15 @@ class FakeProcess:
         self.stdout = io.StringIO(stdout)
         self.stderr = io.StringIO(stderr)
 
-    def wait(self) -> int:
+    def wait(self, timeout=None) -> int:
+        _ = timeout
         return self.returncode
+
+    def terminate(self) -> None:
+        return None
+
+    def kill(self) -> None:
+        return None
 
 
 class ImpacketRunnerTests(unittest.TestCase):
@@ -146,6 +153,7 @@ class ImpacketRunnerTests(unittest.TestCase):
             module_name: str,
             _service: ServiceObservation,
             _max_chars: int,
+            _timeout_seconds=None,
         ) -> ImpacketResult:
             return ImpacketResult(
                 module_name=module_name,

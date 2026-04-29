@@ -33,6 +33,8 @@ def resolve_targets(
 def resolve_target(target: str, mode: ResolveMode = "first") -> TargetResolution:
     if is_ip_or_network(target):
         return TargetResolution(original=target, addresses=(target,))
+    if looks_like_invalid_ip_or_network(target):
+        return TargetResolution(original=target, error="invalid IP address or network")
 
     try:
         infos = socket.getaddrinfo(target, None, type=socket.SOCK_STREAM)
@@ -58,6 +60,18 @@ def is_ip_or_network(value: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+def looks_like_invalid_ip_or_network(value: str) -> bool:
+    candidate = value.split("/", 1)[0]
+    if ":" in candidate:
+        return True
+    if "." not in candidate:
+        return False
+    parts = candidate.split(".")
+    if len(parts) != 4:
+        return False
+    return all(part.isdigit() for part in parts if part)
 
 
 def unique_addresses(infos: list[tuple]) -> list[str]:

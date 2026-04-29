@@ -4,11 +4,31 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import re
 import shlex
 import subprocess
 import sys
 
 from portweft.models import HostObservation, ServiceObservation
+
+
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+def sanitize_text(value: object, preserve_newlines: bool = False) -> str:
+    text = ANSI_ESCAPE_RE.sub("", str(value))
+    cleaned: list[str] = []
+    for char in text:
+        codepoint = ord(char)
+        if char in "\r\n":
+            cleaned.append("\n" if preserve_newlines else " ")
+        elif char == "\t":
+            cleaned.append(" ")
+        elif codepoint < 32 or codepoint == 127:
+            cleaned.append(" ")
+        else:
+            cleaned.append(char)
+    return "".join(cleaned)
 
 
 def now_slug() -> str:
@@ -17,12 +37,12 @@ def now_slug() -> str:
 
 def print_step(message: str) -> None:
     timestamp = dt.datetime.now().strftime("%H:%M:%S")
-    print(f"[{timestamp}] {message}", flush=True)
+    print(f"[{timestamp}] {sanitize_text(message)}", flush=True)
 
 
 def print_error(message: str) -> None:
     timestamp = dt.datetime.now().strftime("%H:%M:%S")
-    for line in message.splitlines():
+    for line in sanitize_text(message, preserve_newlines=True).splitlines():
         print(f"[{timestamp}] Error: {line}", file=sys.stderr, flush=True)
 
 

@@ -33,6 +33,12 @@ class NmapOutputConflictError(PortWeftError):
     exit_code = 2
 
 
+class NmapPassthroughError(PortWeftError):
+    """Raised when passthrough Nmap args are malformed before Nmap runs."""
+
+    exit_code = 2
+
+
 class PortSpecError(PortWeftError):
     """Raised when a PortWeft-managed port list is malformed."""
 

@@ -195,6 +195,32 @@ class ReportingTests(unittest.TestCase):
         self.assertEqual(service["impacket_results"]["impacket-samrdump"], "users observed")
         self.assertEqual(cumulative["targets"][0]["target"], "example.test")
 
+    def test_text_reports_strip_terminal_control_sequences(self) -> None:
+        host = HostObservation(
+            address="192.0.2.10",
+            status="up",
+            services=[
+                ServiceObservation(
+                    host="192.0.2.10",
+                    port=80,
+                    protocol="tcp",
+                    state="open",
+                    service_name="http",
+                    scripts={"banner": "\x1b[31mred\x1b[0m\rcontrol"},
+                )
+            ],
+        )
+
+        with temporary_directory() as temp_dir:
+            report_path = Path(temp_dir) / "report.txt"
+            write_report(report_path, ["192.0.2.10"], Path("initial.xml"), [host])
+            report = report_path.read_text(encoding="utf-8")
+
+        self.assertNotIn("\x1b", report)
+        self.assertNotIn("\r", report)
+        self.assertIn("red", report)
+        self.assertIn("control", report)
+
 
 if __name__ == "__main__":
     unittest.main()

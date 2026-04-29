@@ -10,9 +10,13 @@ stable exit code where possible.
 | --- | --- |
 | Nmap missing | Prints install/PATH guidance and exits `127`. |
 | Bad `--nmap-args` quoting | Prints the parse error and exits `2`. |
+| Bad passthrough timing/concurrency value | Prints the invalid option and exits `2`. |
 | User passes Nmap output flags | Prints a PortWeft XML ownership message and exits `2`. |
+| Target expansion exceeds `--max-scan-targets` | Prints the target estimate and exits `2`. |
 | Domain target cannot resolve | Prints a DNS error, skips that target, and continues. |
 | No targets remain after DNS resolution | Prints a controlled error and exits `2`. |
+| Scanner subprocess timeout | Stops the subprocess, prints a timeout error, and exits `124`. |
+| User presses Ctrl+C | Attempts to stop the active subprocess and exits `130`. |
 | Nmap rejects a user flag | Prints Nmap's own error and returns Nmap's exit code. |
 | Output directory cannot be created | Prints the path and OS error. |
 | Nmap XML cannot be parsed | Prints the XML path and parse/read error. |
@@ -32,6 +36,7 @@ PortWeftError
 NmapNotFoundError
 NmapArgumentStringError
 NmapOutputConflictError
+NmapPassthroughError
 ImpacketUnavailableError
 TargetResolutionError
 OutputDirectoryError

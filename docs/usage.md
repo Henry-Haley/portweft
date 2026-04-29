@@ -134,6 +134,10 @@ python3 -m portweft 192.0.2.10 --nmap-args -T4 -Pn
 python3 -m portweft 192.0.2.10 --nmap-args "-T4 -Pn --max-retries 2"
 ```
 
+Malformed `--nmap-args` strings fail before a scan starts. PortWeft validates
+common passthrough timing and concurrency value types early, while still
+leaving raw Nmap scan choices to the operator.
+
 PortWeft owns Nmap output flags so XML remains parseable. Do not pass `-oX`,
 `-oA`, `-oN`, `-oG`, `-oS`, or `--webxml`. Use `--output-dir` instead.
 
@@ -233,6 +237,24 @@ python3 -m portweft 192.0.2.10 --keep-runs 10
 
 The default is `0`, which keeps all existing output.
 
+## Scan Limits
+
+Each Nmap or Impacket command has a PortWeft timeout by default:
+
+```bash
+python3 -m portweft 192.0.2.10 --scan-timeout 900
+```
+
+Use `--scan-timeout 0` to disable the PortWeft-managed subprocess timeout.
+
+PortWeft blocks large target expansions by default. Use an explicit override
+when the range is in scope:
+
+```bash
+python3 -m portweft 10.0.0.0/16 --allow-large-scan
+python3 -m portweft 10.0.0.0/16 --max-scan-targets 70000
+```
+
 ## Script Output Cap
 
 PortWeft keeps NSE script output bounded in memory and reports. Override the
@@ -290,4 +312,6 @@ responding host gets one report named after the host address, and
 keeps Nmap open-port and NSE output separate from the `IMPACKET RESULTS:`
 section. If `--impacket` was not used, that section explicitly reports
 `Status: not requested (--impacket not used)`. Reruns create a new timestamped
-report directory instead of overwriting existing host reports.
+report directory instead of overwriting existing host reports. If temporary
+XML cleanup fails after reports are written, PortWeft warns but keeps the run
+successful.
