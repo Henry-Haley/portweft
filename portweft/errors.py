@@ -33,6 +33,12 @@ class NmapOutputConflictError(PortWeftError):
     exit_code = 2
 
 
+class PortSpecError(PortWeftError):
+    """Raised when a PortWeft-managed port list is malformed."""
+
+    exit_code = 2
+
+
 class ImpacketUnavailableError(PortWeftError):
     """Raised when optional Impacket recon is requested but unavailable."""
 

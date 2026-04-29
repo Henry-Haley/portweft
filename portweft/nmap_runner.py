@@ -17,6 +17,7 @@ from portweft.errors import (
     NmapArgumentStringError,
     NmapNotFoundError,
     NmapOutputConflictError,
+    PortSpecError,
 )
 from portweft.models import ServiceObservation
 from portweft.profiles import SERVICE_PROFILES, UDP_DEFAULT_PORTS
@@ -33,6 +34,8 @@ OUTPUT_FLAGS = {
 }
 
 UDP_INCOMPATIBLE_FLAGS = {
+    "-A",
+    "-sC",
     "-sS",
     "-sT",
     "-sA",
@@ -53,6 +56,8 @@ UDP_INCOMPATIBLE_PREFIXES = (
 
 UDP_INCOMPATIBLE_OPTIONS_WITH_VALUES = {
     "-p",
+    "--script",
+    "--script-args",
     "--top-ports",
     "--scanflags",
 }
@@ -63,6 +68,7 @@ WINDOWS_NMAP_CANDIDATES = (
 )
 
 BANNER_SCRIPT = "banner"
+MAX_PORT = 65535
 
 
 @dataclass
@@ -97,6 +103,54 @@ def validate_nmap_passthrough(args: list[str]) -> None:
 
 def udp_default_ports_text() -> str:
     return ",".join(str(port) for port in sorted(UDP_DEFAULT_PORTS))
+
+
+def parse_port_spec(value: str) -> set[int]:
+    """Parse PortWeft-managed numeric port specs into concrete port numbers."""
+    text = value.strip()
+    if text in ("-", "-p-"):
+        return set(range(1, MAX_PORT + 1))
+    if not text:
+        raise PortSpecError("Port list cannot be empty.")
+
+    ports: set[int] = set()
+    for raw_part in text.split(","):
+        part = raw_part.strip()
+        if not part:
+            raise PortSpecError(f"Malformed port list: {value}")
+        if "-" in part:
+            start_text, separator, end_text = part.partition("-")
+            if not separator or not start_text or not end_text:
+                raise PortSpecError(f"Malformed port range: {part}")
+            start = parse_single_port(start_text, value)
+            end = parse_single_port(end_text, value)
+            if start > end:
+                raise PortSpecError(f"Port range start is greater than end: {part}")
+            ports.update(range(start, end + 1))
+            continue
+        ports.add(parse_single_port(part, value))
+
+    return ports
+
+
+def parse_single_port(value: str, original: str) -> int:
+    try:
+        port = int(value, 10)
+    except ValueError as error:
+        raise PortSpecError(f"Port lists must use numbers and ranges: {original}") from error
+    if port < 1 or port > MAX_PORT:
+        raise PortSpecError(f"Port out of range (1-{MAX_PORT}): {port}")
+    return port
+
+
+def format_ports(ports: set[int]) -> str:
+    return ",".join(str(port) for port in sorted(ports))
+
+
+def default_udp_ports_for_tcp_ports(ports: str) -> str:
+    requested_ports = parse_port_spec(ports)
+    udp_ports = requested_ports & UDP_DEFAULT_PORTS
+    return format_ports(udp_ports)
 
 
 def normalize_unknown_nmap_args(args: list[str]) -> list[str]:
@@ -227,6 +281,8 @@ def removes_next_udp_arg(arg: str) -> bool:
 def removes_current_udp_arg(arg: str) -> bool:
     return (
         arg.startswith("-p")
+        or arg.startswith("--script=")
+        or arg.startswith("--script-args=")
         or arg.startswith("--top-ports=")
         or arg.startswith("--scanflags=")
     )

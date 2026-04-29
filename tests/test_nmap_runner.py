@@ -12,6 +12,7 @@ from portweft.errors import (
     NmapArgumentStringError,
     NmapNotFoundError,
     NmapOutputConflictError,
+    PortSpecError,
 )
 from portweft.models import ServiceObservation
 from portweft.nmap_runner import (
@@ -19,7 +20,9 @@ from portweft.nmap_runner import (
     build_followup_command,
     build_initial_command,
     build_udp_command,
+    default_udp_ports_for_tcp_ports,
     extract_nmap_error,
+    parse_port_spec,
     run_command,
     split_nmap_args,
     udp_default_ports_text,
@@ -63,6 +66,24 @@ class NmapRunnerTests(unittest.TestCase):
     def test_validate_nmap_passthrough_rejects_output_flags(self) -> None:
         with self.assertRaises(NmapOutputConflictError):
             validate_nmap_passthrough(["-T4", "-oX", "scan.xml"])
+
+    def test_parse_port_spec_accepts_ranges_and_comma_lists(self) -> None:
+        self.assertEqual(parse_port_spec("1-3,65342"), {1, 2, 3, 65342})
+
+    def test_parse_port_spec_accepts_all_ports_shorthand(self) -> None:
+        ports = parse_port_spec("-")
+        self.assertIn(1, ports)
+        self.assertIn(65535, ports)
+        self.assertEqual(len(ports), 65535)
+
+    def test_parse_port_spec_rejects_out_of_range_ports(self) -> None:
+        with self.assertRaises(PortSpecError):
+            parse_port_spec("65536")
+
+    def test_default_udp_ports_for_tcp_ports_returns_only_overlaps(self) -> None:
+        self.assertEqual(default_udp_ports_for_tcp_ports("445"), "")
+        self.assertEqual(default_udp_ports_for_tcp_ports("53,445"), "53")
+        self.assertEqual(default_udp_ports_for_tcp_ports("53-69"), "53,67,68,69")
 
     def test_build_initial_command_defaults_to_light_version_detection(self) -> None:
         command = build_initial_command(
@@ -168,8 +189,14 @@ class NmapRunnerTests(unittest.TestCase):
             Path("udp.xml"),
             [
                 "-T4",
+                "-A",
+                "-sC",
                 "-sS",
                 "-PA80",
+                "--script",
+                "http-title",
+                "--script-args",
+                "unsafe=0",
                 "--scanflags",
                 "SYNFIN",
                 "-p",
@@ -181,8 +208,14 @@ class NmapRunnerTests(unittest.TestCase):
         self.assertIn("-T4", command)
         self.assertIn("-sU", command)
         self.assertIn("U:53", command)
+        self.assertNotIn("-A", command)
+        self.assertNotIn("-sC", command)
         self.assertNotIn("-sS", command)
         self.assertNotIn("-PA80", command)
+        self.assertNotIn("--script", command)
+        self.assertNotIn("http-title", command)
+        self.assertNotIn("--script-args", command)
+        self.assertNotIn("unsafe=0", command)
         self.assertNotIn("--scanflags", command)
         self.assertNotIn("SYNFIN", command)
         self.assertNotIn("22,80", command)

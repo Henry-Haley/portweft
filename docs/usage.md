@@ -96,11 +96,18 @@ Specify ports:
 
 ```bash
 python3 -m portweft 192.0.2.10 -p 22,80,443,445
+python3 -m portweft 192.0.2.10 -p 1-1024,8080
+python3 -m portweft 192.0.2.10 -p-
 ```
 
-Use Nmap's top ports:
+Port lists accept comma-separated ports, dash ranges, and Nmap's all-ports
+`-p-` shorthand.
+
+Use Nmap's default top ports, or specify a count:
 
 ```bash
+python3 -m portweft 192.0.2.10 --top-ports
+python3 -m portweft 192.0.2.10 --top-ports 100
 python3 -m portweft 192.0.2.10 --top-ports 1000
 ```
 
@@ -117,11 +124,13 @@ PortWeft accepts raw Nmap options after its own arguments:
 
 ```bash
 python3 -m portweft 192.0.2.10 -- -T4 -Pn --max-retries 2
+python3 -m portweft --max-retries 2 192.0.2.10 --dry-run
 ```
 
-Or as a quoted string:
+Or through `--nmap-args` as separate tokens or a quoted string:
 
 ```bash
+python3 -m portweft 192.0.2.10 --nmap-args -T4 -Pn
 python3 -m portweft 192.0.2.10 --nmap-args "-T4 -Pn --max-retries 2"
 ```
 
@@ -132,6 +141,11 @@ PortWeft owns Nmap output flags so XML remains parseable. Do not pass `-oX`,
 
 PortWeft runs a small UDP companion scan by default for UDP-first and
 UDP-centric services.
+
+When `-p/--ports` is used, the UDP companion scan is narrowed to only the
+requested ports that overlap PortWeft's curated UDP defaults. For example,
+`-p 445` skips UDP, while `-p 53,445` runs UDP only for `53`. An explicit
+`--udp-ports` value still runs those UDP ports unless `--no-udp` is also set.
 
 Disable it:
 
@@ -151,7 +165,7 @@ continues with the TCP results.
 
 The UDP companion scan filters TCP-only scan flags and conflicting
 port-selection passthrough flags such as `-sS`, `-sT`, `-PA`, `-PS`, `-p`,
-`--top-ports`, and `--scanflags`.
+`--top-ports`, `--scanflags`, and passthrough NSE script flags.
 
 ## Dry Run
 
@@ -275,4 +289,5 @@ responding host gets one report named after the host address, and
 `CUMULATIVE-report.txt` contains all responding hosts from the run. The report
 keeps Nmap open-port and NSE output separate from the `IMPACKET RESULTS:`
 section. If `--impacket` was not used, that section explicitly reports
-`Status: not requested (--impacket not used)`.
+`Status: not requested (--impacket not used)`. Reruns create a new timestamped
+report directory instead of overwriting existing host reports.

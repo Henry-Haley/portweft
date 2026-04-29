@@ -166,12 +166,25 @@ Specify ports:
 
 ```bash
 python3 -m portweft 192.0.2.10 -p 22,80,443,445
+python3 -m portweft 192.0.2.10 -p 1-1024,8080
+python3 -m portweft 192.0.2.10 -p-
+```
+
+Port lists accept comma-separated ports, dash ranges, and Nmap's all-ports
+`-p-` shorthand.
+
+Run Nmap's default top ports, or specify a count:
+
+```bash
+python3 -m portweft 192.0.2.10 --top-ports
+python3 -m portweft 192.0.2.10 --top-ports 100
 ```
 
 Pass Nmap timing or host-discovery flags through to Nmap:
 
 ```bash
 python3 -m portweft 192.0.2.10 -T4 -Pn
+python3 -m portweft -T4 -Pn 192.0.2.10
 ```
 
 Pass a quoted Nmap argument string:
@@ -275,8 +288,9 @@ progress, then removed after the consolidated reports are written. Reports note
 that temporary XML was removed, but do not reference deleted XML paths. Each
 responding host gets its own `<host>-report.txt`; hosts with no observed
 response do not get a report. `CUMULATIVE-report.txt` includes every responding
-host from the run. Dry-run mode only prints planned commands and does not write
-files.
+host from the run. Reruns create a new timestamped report directory instead of
+overwriting an existing host report. Dry-run mode only prints planned commands
+and does not write files.
 
 The initial TCP scan includes Nmap service detection and the low-noise NSE
 `banner` script. If `--impacket` is not used, reports explicitly say
@@ -347,7 +361,14 @@ IKE/IPsec, Syslog, MSSQL Browser, SSDP, NFS/RPC, and Memcached. UDP scan
 failures are non-fatal; if Nmap reports a privilege, driver, or flag error,
 PortWeft prints the Nmap message and continues with available TCP results.
 TCP-only scan flags and conflicting port-selection flags are filtered out of
-the UDP companion command.
+the UDP companion command. Passthrough NSE script flags are also kept out of
+the UDP companion scan so TCP-oriented scripts do not leak into it.
+
+When `-p/--ports` is used, PortWeft does not run the full UDP companion scan.
+It only runs UDP for requested ports that overlap the curated UDP defaults.
+For example, `-p 445` skips UDP, while `-p 53,445` runs UDP only for `53`.
+An explicit `--udp-ports` value still runs those UDP ports unless `--no-udp`
+is also set.
 
 UDP follow-up scans are only generated for services that Nmap reports as open
 UDP services.

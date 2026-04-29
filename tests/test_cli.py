@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import datetime as dt
 import io
 import json
 import socket
@@ -16,6 +17,7 @@ from portweft.cli import (
     main,
     print_unmatched_service,
     prune_old_runs,
+    unique_run_id,
 )
 from portweft.impacket_runner import ImpacketAvailability
 from portweft.models import HostObservation, ServiceObservation
@@ -81,11 +83,54 @@ class CliTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertIn("Initial Nmap scan starting", output)
             self.assertIn("-T4 -Pn --script banner -sV --version-light -p 22,80", output)
-            self.assertIn("UDP companion scan starting", output)
-            self.assertIn("-sU -p U:", output)
+            self.assertIn("UDP companion scan complete: skipped because -p/--ports", output)
+            self.assertNotIn("-sU", output)
             self.assertIn("Dry run complete", output)
             self.assertFalse((Path(temp_dir) / "scans").exists())
             self.assertFalse((Path(temp_dir) / "reports").exists())
+
+    def test_explicit_ports_run_udp_only_when_ports_overlap_udp_defaults(self) -> None:
+        with temporary_directory() as temp_dir:
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                exit_code = main(
+                    [
+                        "127.0.0.1",
+                        "-p",
+                        "53,445",
+                        "--dry-run",
+                        "--output-dir",
+                        temp_dir,
+                    ]
+                )
+
+            output = stdout.getvalue()
+            self.assertEqual(exit_code, 0)
+            self.assertIn("UDP companion scan starting", output)
+            self.assertIn("-sU -p U:53", output)
+            self.assertNotIn("U:53,67", output)
+
+    def test_explicit_udp_ports_override_tcp_port_overlap_rule(self) -> None:
+        with temporary_directory() as temp_dir:
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                exit_code = main(
+                    [
+                        "127.0.0.1",
+                        "-p",
+                        "445",
+                        "--udp-ports",
+                        "53,123",
+                        "--dry-run",
+                        "--output-dir",
+                        temp_dir,
+                    ]
+                )
+
+            output = stdout.getvalue()
+            self.assertEqual(exit_code, 0)
+            self.assertIn("UDP companion scan starting", output)
+            self.assertIn("-sU -p U:53,123", output)
 
     def test_dry_run_resolves_domain_before_building_nmap_command(self) -> None:
         with temporary_directory() as temp_dir:
@@ -137,6 +182,124 @@ class CliTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn("-p-", output)
         self.assertNotIn("-p -", output)
+
+    def test_dry_run_accepts_port_ranges_and_comma_lists(self) -> None:
+        with temporary_directory() as temp_dir:
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                exit_code = main(
+                    [
+                        "127.0.0.1",
+                        "-p",
+                        "1-65335,65342",
+                        "--dry-run",
+                        "--output-dir",
+                        temp_dir,
+                    ]
+                )
+
+        output = stdout.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertIn("-p 1-65335,65342", output)
+        self.assertIn("-sU -p U:", output)
+
+    def test_top_ports_without_value_uses_nmap_default_count(self) -> None:
+        with temporary_directory() as temp_dir:
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                exit_code = main(
+                    [
+                        "--top-ports",
+                        "127.0.0.1",
+                        "--dry-run",
+                        "--output-dir",
+                        temp_dir,
+                    ]
+                )
+
+        output = stdout.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertIn("--top-ports 1000", output)
+
+    def test_top_ports_accepts_explicit_count(self) -> None:
+        with temporary_directory() as temp_dir:
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                exit_code = main(
+                    [
+                        "127.0.0.1",
+                        "--top-ports",
+                        "10",
+                        "--dry-run",
+                        "--output-dir",
+                        temp_dir,
+                    ]
+                )
+
+        output = stdout.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertIn("--top-ports 10", output)
+
+    def test_dash_prefixed_nmap_args_do_not_break_nmap_args_option(self) -> None:
+        with temporary_directory() as temp_dir:
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                exit_code = main(
+                    [
+                        "127.0.0.1",
+                        "--nmap-args",
+                        "-T4",
+                        "-Pn",
+                        "--dry-run",
+                        "--output-dir",
+                        temp_dir,
+                    ]
+                )
+
+        output = stdout.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertIn("-T4 -Pn --script banner", output)
+
+    def test_nmap_args_with_values_can_appear_before_target(self) -> None:
+        with temporary_directory() as temp_dir:
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                exit_code = main(
+                    [
+                        "--nmap-args",
+                        "--max-retries",
+                        "2",
+                        "127.0.0.1",
+                        "--dry-run",
+                        "--output-dir",
+                        temp_dir,
+                    ]
+                )
+
+        output = stdout.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Resolved scan targets: 127.0.0.1", output)
+        self.assertIn("--max-retries 2 --script banner", output)
+
+    def test_raw_nmap_args_with_values_can_appear_before_target(self) -> None:
+        with temporary_directory() as temp_dir:
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                exit_code = main(
+                    [
+                        "--max-retries",
+                        "2",
+                        "127.0.0.1",
+                        "--dry-run",
+                        "--output-dir",
+                        temp_dir,
+                    ]
+                )
+
+        output = stdout.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Resolved scan targets: 127.0.0.1", output)
+        self.assertIn("--max-retries 2 --script banner", output)
 
     def test_resolution_failure_skips_target_and_continues(self) -> None:
         with temporary_directory() as temp_dir:
@@ -337,6 +500,30 @@ class CliTests(unittest.TestCase):
 
             self.assertFalse((report_root / "20260101-000000Z").exists())
             self.assertTrue((report_root / "20260102-000000Z").exists())
+
+    def test_unique_run_id_does_not_reuse_existing_report_directory(self) -> None:
+        with temporary_directory() as temp_dir:
+            output_root = Path(temp_dir)
+            existing_report_dir = (
+                output_root
+                / "reports"
+                / "20260429-201530-000000Z"
+            )
+            existing_report_dir.mkdir(parents=True)
+            scan_started_at = dt.datetime(
+                2026,
+                4,
+                29,
+                20,
+                15,
+                30,
+                tzinfo=dt.timezone.utc,
+            )
+
+            self.assertEqual(
+                unique_run_id(output_root, scan_started_at),
+                "20260429-201530-000000Z-2",
+            )
 
     def test_cleanup_scan_outputs_removes_temporary_xml_directory(self) -> None:
         with temporary_directory() as temp_dir:

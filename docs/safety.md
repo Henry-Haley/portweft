@@ -69,7 +69,15 @@ python3 -m portweft 192.0.2.10 --udp-ports 53,123,161
 
 The UDP companion scan removes TCP-only scan flags and conflicting
 port-selection passthrough flags from its command before adding `-sU` and the
-curated UDP port list.
+curated UDP port list. Passthrough NSE script flags are also removed from the
+UDP companion command so TCP-oriented scripts do not leak into it.
+
+If the operator supplies `-p/--ports`, PortWeft treats that as explicit scan
+scope and does not automatically run the full UDP companion list. It runs UDP
+only when the requested TCP port list overlaps the curated UDP defaults, and
+then only for those overlapping ports. For example, `-p 445` skips UDP, while
+`-p 53,445` runs `-sU -p U:53`. Explicit `--udp-ports` values still run unless
+`--no-udp` is also set.
 
 ## UDP Failure Handling
 
