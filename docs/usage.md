@@ -18,6 +18,14 @@ Linux and macOS:
 python3 -m portweft 192.0.2.10
 ```
 
+Print syntax/help:
+
+```bash
+python3 portweft
+python3 -m portweft
+python3 -m portweft -h
+```
+
 Windows:
 
 ```powershell

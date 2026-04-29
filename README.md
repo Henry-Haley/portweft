@@ -103,6 +103,14 @@ portweft/
 
 ## Example Usage
 
+Print syntax/help:
+
+```bash
+python3 portweft
+python3 -m portweft
+python3 -m portweft -h
+```
+
 Run the default scan against one host:
 
 ```bash

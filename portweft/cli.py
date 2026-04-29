@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from portweft import APP_NAME
@@ -98,7 +99,12 @@ def main(argv: list[str] | None = None) -> int:
 
 def run(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    parsed, unknown_nmap_args = parser.parse_known_args(argv)
+    effective_argv = list(sys.argv[1:] if argv is None else argv)
+    if not effective_argv:
+        parser.print_help()
+        return 0
+
+    parsed, unknown_nmap_args = parser.parse_known_args(effective_argv)
     ensure_nmap_available(parsed.nmap_path, parsed.dry_run)
     extra_nmap_args = split_nmap_args(parsed.nmap_args) + normalize_unknown_nmap_args(
         unknown_nmap_args
