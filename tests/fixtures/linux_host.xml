@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<nmaprun scanner="nmap">
+  <host>
+    <status state="up"/>
+    <address addr="192.0.2.10" addrtype="ipv4"/>
+    <hostnames>
+      <hostname name="linux-web.example" type="user"/>
+    </hostnames>
+    <ports>
+      <port protocol="tcp" portid="22">
+        <state state="open"/>
+        <service name="ssh" product="OpenSSH" version="9.6p1" extrainfo="Ubuntu"/>
+      </port>
+      <port protocol="tcp" portid="80">
+        <state state="closed"/>
+        <service name="http"/>
+      </port>
+      <port protocol="tcp" portid="9000">
+        <state state="open"/>
+        <service name="http" product="Apache httpd" version="2.4.58"/>
+        <script id="http-title" output="Example title"/>
+      </port>
+    </ports>
+    <os>
+      <osmatch name="Linux 5.4 - 5.15" accuracy="93">
+        <osclass vendor="Linux" osfamily="Linux"/>
+      </osmatch>
+    </os>
+  </host>
+</nmaprun>

@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<nmaprun scanner="nmap">
+  <host>
+    <status state="up"/>
+    <address addr="192.0.2.30" addrtype="ipv4"/>
+    <ports>
+      <port protocol="tcp" portid="2222">
+        <state state="open"/>
+        <service name="unknown" product="OpenSSH" version="8.9p1"/>
+      </port>
+      <port protocol="tcp" portid="9000">
+        <state state="open"/>
+        <service name="unknown" product="nginx" version="1.24.0"/>
+      </port>
+      <port protocol="tcp" portid="9445">
+        <state state="open"/>
+        <service name="unknown" product="Samba smbd" version="4.18"/>
+      </port>
+    </ports>
+  </host>
+</nmaprun>

@@ -1,0 +1,32 @@
+PortWeft Report
+Generated: 2026-04-29T00:00:00
+Operator OS: Linux 6.x
+Targets: 192.0.2.10
+Initial XML: output/scans/example-run/initial.xml
+
+Host: 192.0.2.10 (example-host)
+  Status: up
+  OS: Linux 5.4 - 5.15 (93% accuracy)
+  Open services:
+    - 22/tcp ssh OpenSSH 9.6p1 Ubuntu [profiles: ssh]
+      ssh-hostkey:
+        256 SHA256:example-fingerprint ECDSA
+    - 443/tcp https nginx 1.24.0 [profiles: web, tls]
+      http-title:
+        Example Application
+      http-server-header:
+        nginx/1.24.0
+      ssl-cert:
+        Subject: commonName=example.internal
+    - 161/udp snmp net-snmp [profiles: snmp]
+      snmp-info:
+        enterprise: net-snmp
+
+Host: 192.0.2.11
+  Status: up
+  OS: windows-like (inferred from open ports)
+  Open services:
+    - 445/tcp microsoft-ds Microsoft Windows SMB [profiles: smb]
+      smb2-security-mode:
+        Message signing enabled but not required
+    - 3389/tcp ms-wbt-server Microsoft Terminal Services [profiles: rdp]

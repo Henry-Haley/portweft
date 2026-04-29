@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<nmaprun scanner="nmap">
+  <host>
+    <status state="up"/>
+    <address addr="192.0.2.20" addrtype="ipv4"/>
+    <hostnames>
+      <hostname name="winhost.example" type="user"/>
+    </hostnames>
+    <ports>
+      <port protocol="tcp" portid="445">
+        <state state="open"/>
+        <service name="microsoft-ds" product="Microsoft Windows SMB"/>
+        <script id="smb2-security-mode" output="Message signing enabled but not required"/>
+      </port>
+      <port protocol="tcp" portid="3389">
+        <state state="open"/>
+        <service name="ms-wbt-server" product="Microsoft Terminal Services"/>
+      </port>
+      <port protocol="tcp" portid="389">
+        <state state="open"/>
+        <service name="ldap" product="Microsoft Windows Active Directory LDAP"/>
+      </port>
+    </ports>
+    <os>
+      <osmatch name="Microsoft Windows Server 2019" accuracy="96">
+        <osclass vendor="Microsoft" osfamily="Windows"/>
+      </osmatch>
+    </os>
+  </host>
+</nmaprun>
