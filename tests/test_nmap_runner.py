@@ -137,6 +137,33 @@ class NmapRunnerTests(unittest.TestCase):
         self.assertIn("U:53,123,161", command)
         self.assertIn("udp.xml", command)
 
+    def test_build_udp_command_filters_tcp_specific_passthrough_args(self) -> None:
+        command = build_udp_command(
+            parsed_args(udp_ports="53"),
+            ["192.0.2.10"],
+            Path("udp.xml"),
+            [
+                "-T4",
+                "-sS",
+                "-PA80",
+                "--scanflags",
+                "SYNFIN",
+                "-p",
+                "22,80",
+                "--top-ports=100",
+            ],
+        )
+
+        self.assertIn("-T4", command)
+        self.assertIn("-sU", command)
+        self.assertIn("U:53", command)
+        self.assertNotIn("-sS", command)
+        self.assertNotIn("-PA80", command)
+        self.assertNotIn("--scanflags", command)
+        self.assertNotIn("SYNFIN", command)
+        self.assertNotIn("22,80", command)
+        self.assertNotIn("--top-ports=100", command)
+
     def test_build_udp_followup_command_uses_udp_prefix(self) -> None:
         service = ServiceObservation(
             host="192.0.2.10",

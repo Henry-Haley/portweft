@@ -6,8 +6,15 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from portweft.cli import cleanup_scan_outputs, main, print_unmatched_service, prune_old_runs
+from portweft.cli import (
+    cleanup_scan_outputs,
+    main,
+    print_unmatched_service,
+    prune_old_runs,
+)
+from portweft.impacket_runner import ImpacketAvailability
 from portweft.models import ServiceObservation
 from tests.helpers import temporary_directory
 
@@ -136,6 +143,32 @@ class CliTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertIn("UDP companion scan complete: skipped by --no-udp", output)
             self.assertNotIn("-sU", output)
+
+    def test_impacket_missing_exits_before_scan(self) -> None:
+        with temporary_directory() as temp_dir:
+            stderr = io.StringIO()
+            with patch("portweft.cli.ensure_nmap_available"):
+                with patch(
+                    "portweft.cli.ensure_impacket_package",
+                    return_value=ImpacketAvailability(
+                        available=False,
+                        reason="Install with pip install .[impacket]",
+                    ),
+                ):
+                    with patch("portweft.cli.run_command") as run_command:
+                        with contextlib.redirect_stderr(stderr):
+                            exit_code = main(
+                                [
+                                    "127.0.0.1",
+                                    "--impacket",
+                                    "--output-dir",
+                                    temp_dir,
+                                ]
+                            )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("Install with pip install .[impacket]", stderr.getvalue())
+        run_command.assert_not_called()
 
     def test_prune_old_runs_keeps_newest_outputs(self) -> None:
         with temporary_directory() as temp_dir:

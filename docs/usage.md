@@ -10,8 +10,8 @@ runtime target.
 - Optional: Impacket for `--impacket` recon modules
 
 No Python packages are required for normal use. Impacket is only needed when
-optional Impacket recon is enabled. If it is missing, PortWeft attempts to
-install it automatically with pip before running Impacket recon.
+optional Impacket recon is enabled. If it is missing, PortWeft prints
+`Install with pip install .[impacket]` and exits without starting the scan.
 
 Manual install from the source tree:
 
@@ -128,6 +128,10 @@ UDP scans may require elevated privileges or Npcap/libpcap support depending on
 the OS. If Nmap rejects the UDP scan, PortWeft prints Nmap's message and
 continues with the TCP results.
 
+The UDP companion scan filters TCP-only scan flags and conflicting
+port-selection passthrough flags such as `-sS`, `-sT`, `-PA`, `-PS`, `-p`,
+`--top-ports`, and `--scanflags`.
+
 ## Dry Run
 
 Preview commands without scanning:
@@ -156,15 +160,15 @@ samrdump, rpcdump
 
 These modules only run for supported open TCP services in matching profiles,
 such as SMB and Microsoft RPC. PortWeft imports the Impacket Python package
-only when `--impacket` is used. If the package is missing, PortWeft runs:
+only when `--impacket` is used. If the package is missing, PortWeft exits with:
 
-```bash
-python3 -m pip install "impacket>=0.11"
+```text
+Install with pip install .[impacket]
 ```
 
-If pip installation fails, or if matching Impacket console tools are still
-missing afterward, PortWeft prints a skip message; they are not required for
-normal use.
+Matching Impacket console tools are still best-effort. If a tool is missing
+after the Python package is available, PortWeft prints a skip message for that
+module and continues.
 
 Limit retained Impacket output per module:
 
@@ -222,7 +226,9 @@ output/
 
 Nmap XML files are temporary working files under `output/scans/<run-start-gmt>/`
 while the run is active. Their names include the GMT scan start timestamp, and
-PortWeft removes them after the final reports are written. Each responding host
-gets one report named after the host address, and `CUMULATIVE-report.txt`
-contains all responding hosts from the run. The report keeps Nmap open-port and
-NSE output separate from the `IMPACKET RESULTS:` section.
+PortWeft removes them after the final reports are written. Reports note that
+temporary XML was removed, but do not reference deleted XML paths. Each
+responding host gets one report named after the host address, and
+`CUMULATIVE-report.txt` contains all responding hosts from the run. The report
+keeps Nmap open-port and NSE output separate from the `IMPACKET RESULTS:`
+section.

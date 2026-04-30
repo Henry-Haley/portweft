@@ -6,6 +6,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from portweft.errors import ImpacketUnavailableError
+import portweft.impacket_runner as impacket_runner
 from portweft.cli import run_impacket_recon
 from portweft.impacket_runner import (
     ImpacketAvailability,
@@ -69,42 +71,18 @@ class ImpacketRunnerTests(unittest.TestCase):
         self.assertIn("not importable", availability.reason)
         self.assertIn(".[impacket]", availability.reason)
 
-    def test_ensure_impacket_package_installs_when_missing_then_imports(self) -> None:
-        fake_module = SimpleNamespace(__version__="0.12.0")
-        process = FakeProcess(returncode=0, stdout="installed\n")
-        with patch(
-            "portweft.impacket_runner.importlib.import_module",
-            side_effect=[ImportError("No module named impacket"), fake_module],
-        ):
-            with patch(
-                "portweft.impacket_runner.subprocess.Popen",
-                return_value=process,
-            ) as popen:
-                with contextlib.redirect_stdout(io.StringIO()):
-                    availability = ensure_impacket_package()
-
-        self.assertTrue(availability.available)
-        self.assertEqual(availability.version, "0.12.0")
-        command = popen.call_args.args[0]
-        self.assertEqual(command[1:4], ["-m", "pip", "install"])
-        self.assertIn("impacket", command[4])
-
-    def test_ensure_impacket_package_reports_install_failure(self) -> None:
-        process = FakeProcess(returncode=1, stderr="network unavailable\n")
-        with patch(
-            "portweft.impacket_runner.importlib.import_module",
+    def test_ensure_impacket_package_reports_missing_without_installing(self) -> None:
+        with patch.object(
+            impacket_runner.importlib,
+            "import_module",
             side_effect=ImportError("No module named impacket"),
         ):
-            with patch(
-                "portweft.impacket_runner.subprocess.Popen",
-                return_value=process,
-            ):
-                with contextlib.redirect_stdout(io.StringIO()):
-                    availability = ensure_impacket_package()
+            with patch.object(impacket_runner.subprocess, "Popen") as popen:
+                availability = ensure_impacket_package()
 
+        popen.assert_not_called()
         self.assertFalse(availability.available)
-        self.assertIn("Automatic Impacket install failed", availability.reason)
-        self.assertIn("network unavailable", availability.reason)
+        self.assertIn("Install with pip install .[impacket]", availability.reason)
 
     def test_module_supports_only_expected_tcp_ports(self) -> None:
         self.assertTrue(module_supports_service("samrdump", smb_service(445)))
@@ -186,7 +164,7 @@ class ImpacketRunnerTests(unittest.TestCase):
         self.assertEqual(service.scripts["impacket-samrdump"], "samrdump output")
         self.assertEqual(service.scripts["impacket-rpcdump"], "rpcdump output")
 
-    def test_cli_impacket_recon_skips_when_package_is_missing(self) -> None:
+    def test_cli_impacket_recon_exits_when_package_is_missing(self) -> None:
         service = smb_service()
         host = HostObservation(address="192.0.2.10", services=[service])
         parsed = SimpleNamespace(max_impacket_output_chars=4096)
@@ -195,16 +173,14 @@ class ImpacketRunnerTests(unittest.TestCase):
             "portweft.cli.ensure_impacket_package",
             return_value=ImpacketAvailability(
                 available=False,
-                reason="Automatic Impacket install failed",
+                reason="Install with pip install .[impacket]",
             ),
         ):
             with patch("portweft.cli.run_impacket_module") as run_module:
-                stdout = io.StringIO()
-                with contextlib.redirect_stdout(stdout):
+                with self.assertRaises(ImpacketUnavailableError):
                     run_impacket_recon(parsed, [host])
 
         run_module.assert_not_called()
-        self.assertIn("Impacket recon complete: skipped", stdout.getvalue())
         self.assertEqual(service.scripts, {})
 
 

@@ -45,8 +45,8 @@ whether a service is vulnerable or recommend offensive next steps.
 - Nmap OS detection may be missing, uncertain, or wrong.
 - Banner matching is heuristic and can be imperfect.
 - Follow-up coverage depends on locally available Nmap scripts.
-- Optional Impacket recon depends on pip/network availability for automatic
-  install when missing, plus locally available Impacket console tools.
+- Optional Impacket recon requires the operator to install the optional package
+  ahead of time, plus locally available Impacket console tools.
 - Service detection depends on Nmap probe quality and target behavior.
 - Reports are plain text only.
 - Profile definitions are currently built into `portweft/profiles.py`.

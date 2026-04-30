@@ -22,7 +22,6 @@ def write_reports(
     report_dir: Path,
     targets: list[str],
     scan_started_at: dt.datetime,
-    xml_paths: list[Path],
     hosts: list[HostObservation],
 ) -> list[Path]:
     """Write one cumulative report and one report for each responding host."""
@@ -36,7 +35,7 @@ def write_reports(
     cumulative_path = report_dir / CUMULATIVE_REPORT_NAME
     write_lines(
         cumulative_path,
-        report_lines(targets, scan_started_at, xml_paths, report_hosts),
+        report_lines(targets, scan_started_at, report_hosts),
     )
     written.append(cumulative_path)
 
@@ -44,7 +43,7 @@ def write_reports(
         host_path = report_dir / host_report_filename(host)
         write_lines(
             host_path,
-            report_lines(targets, scan_started_at, xml_paths, [host]),
+            report_lines(targets, scan_started_at, [host]),
         )
         written.append(host_path)
 
@@ -63,10 +62,11 @@ def write_report(
     Kept for callers that want an explicit report path; the CLI uses
     write_reports() so each responding host gets its own consolidated file.
     """
+    _ = initial_xml
     started_at = scan_started_at or dt.datetime.now(dt.timezone.utc)
     write_lines(
         report_path,
-        report_lines(targets, started_at, [initial_xml], reportable_hosts(hosts)),
+        report_lines(targets, started_at, reportable_hosts(hosts)),
     )
 
 
@@ -82,7 +82,6 @@ def write_lines(report_path: Path, lines: Iterator[str]) -> None:
 def report_lines(
     targets: list[str],
     scan_started_at: dt.datetime,
-    xml_paths: list[Path],
     hosts: list[HostObservation],
 ) -> Iterator[str]:
     yield f"{APP_NAME} Report"
@@ -90,12 +89,7 @@ def report_lines(
     yield f"Generated (GMT): {format_gmt(dt.datetime.now(dt.timezone.utc))}"
     yield f"Operator OS: {platform.system()} {platform.release()}"
     yield f"Targets: {', '.join(targets)}"
-    yield "Working XML files:"
-    if xml_paths:
-        for xml_path in xml_paths:
-            yield f"  - {xml_path}"
-    else:
-        yield "  none"
+    yield "Temporary XML: removed after parsing and report generation"
     yield ""
     yield "NMAP OUTPUT:"
     if not hosts:

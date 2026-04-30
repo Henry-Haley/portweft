@@ -6,7 +6,6 @@ from dataclasses import dataclass
 import importlib
 import shutil
 import subprocess
-import sys
 import threading
 from typing import TextIO
 
@@ -16,7 +15,7 @@ from portweft.utils import print_error, print_step, quote_command
 
 
 DEFAULT_MAX_IMPACKET_OUTPUT_CHARS = 8192
-IMPACKET_PIP_SPEC = "impacket>=0.11"
+IMPACKET_INSTALL_HINT = "Install with pip install .[impacket]"
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,10 +77,8 @@ def import_impacket_package() -> ImpacketAvailability:
     except ImportError as error:
         return ImpacketAvailability(
             available=False,
-            reason=(
-                f"Impacket Python package is not importable: {error}. "
-                'Install it with: python3 -m pip install ".[impacket]"'
-            ),
+            reason=f"Impacket Python package is not importable: {error}. "
+            f"{IMPACKET_INSTALL_HINT}",
         )
 
     version = getattr(module, "__version__", "")
@@ -91,48 +88,8 @@ def import_impacket_package() -> ImpacketAvailability:
 def ensure_impacket_package(
     max_output_chars: int = DEFAULT_MAX_IMPACKET_OUTPUT_CHARS,
 ) -> ImpacketAvailability:
-    availability = import_impacket_package()
-    if availability.available:
-        return availability
-
-    print_step(f"Impacket package missing; installing {IMPACKET_PIP_SPEC}")
-    install_result = install_impacket_package(max_output_chars)
-    if not install_result.ok:
-        detail = process_output(install_result, max_output_chars)
-        reason = (
-            f"Automatic Impacket install failed with exit code "
-            f"{install_result.exit_code}."
-        )
-        if detail:
-            reason = f"{reason}\n{detail}"
-        return ImpacketAvailability(available=False, reason=reason)
-
-    importlib.invalidate_caches()
-    availability = import_impacket_package()
-    if availability.available:
-        return availability
-
-    return ImpacketAvailability(
-        available=False,
-        reason=(
-            "Automatic Impacket install completed, but the package is still "
-            f"not importable. {availability.reason}"
-        ),
-    )
-
-
-def install_impacket_package(
-    max_output_chars: int = DEFAULT_MAX_IMPACKET_OUTPUT_CHARS,
-) -> ProcessResult:
-    command = [sys.executable, "-m", "pip", "install", IMPACKET_PIP_SPEC]
-    print_step(quote_command(command))
-    try:
-        return run_bounded_process(command, max_output_chars)
-    except FileNotFoundError:
-        return ProcessResult(
-            exit_code=127,
-            stderr=f"Python executable not found: {sys.executable}",
-        )
+    _ = max_output_chars
+    return import_impacket_package()
 
 
 def modules_for_profile(profile_name: str) -> list[str]:

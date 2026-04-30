@@ -62,6 +62,10 @@ Change UDP ports:
 python3 -m portweft 192.0.2.10 --udp-ports 53,123,161
 ```
 
+The UDP companion scan removes TCP-only scan flags and conflicting
+port-selection passthrough flags from its command before adding `-sU` and the
+curated UDP port list.
+
 ## UDP Failure Handling
 
 UDP scans can fail because of OS permissions, missing packet capture drivers,
@@ -78,9 +82,11 @@ different privileges or flags.
 ## Optional Impacket Recon
 
 Impacket recon is disabled by default. When enabled with `--impacket`, PortWeft
-imports the Impacket Python package, attempts to install it with pip if it is
-missing, then only runs allowlisted recon modules against services that were
-already observed open and matched to a compatible profile.
+imports the Impacket Python package. If it is missing, PortWeft prints
+`Install with pip install .[impacket]` and exits before scanning. It does not
+install packages or otherwise modify the operator machine during a run. When
+the package is available, PortWeft only runs allowlisted recon modules against
+services that were already observed open and matched to a compatible profile.
 
 Current allowlist:
 
@@ -90,8 +96,8 @@ samrdump, rpcdump
 
 The allowlist excludes Impacket tooling for exploitation, relaying,
 credential dumping, password guessing, SID brute forcing, or vulnerability
-checks. If the automatic Impacket install fails or a required command is still
-not available, PortWeft prints a skip message and continues.
+checks. If a required command is not available, PortWeft prints a skip message
+and continues.
 
 ## Safe Operating Practices
 

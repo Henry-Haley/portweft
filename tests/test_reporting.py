@@ -84,7 +84,6 @@ class ReportingTests(unittest.TestCase):
                 report_dir,
                 ["192.0.2.0/24"],
                 scan_started_at,
-                [Path("20260429-201530-000000Z-initial.xml")],
                 [responding_host, silent_host],
             )
 
@@ -101,6 +100,8 @@ class ReportingTests(unittest.TestCase):
         self.assertTrue(host_exists)
         self.assertFalse(silent_exists)
         self.assertIn("Scan started (GMT): 2026-04-29 20:15:30 GMT", host_report)
+        self.assertIn("Temporary XML: removed after parsing", host_report)
+        self.assertNotIn(".xml", host_report)
         self.assertIn("NMAP OUTPUT:", host_report)
         self.assertIn("IMPACKET RESULTS:", host_report)
         self.assertLess(

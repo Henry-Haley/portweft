@@ -3,11 +3,7 @@ Scan started (GMT): 2026-04-29 00:00:00 GMT
 Generated (GMT): 2026-04-29 00:01:30 GMT
 Operator OS: Linux 6.x
 Targets: 192.0.2.10, 192.0.2.11
-Working XML files:
-  - output/scans/example-run/example-run-initial.xml
-  - output/scans/example-run/example-run-udp.xml
-  - output/scans/example-run/example-run-192.0.2.10-tcp-web.xml
-  - output/scans/example-run/example-run-192.0.2.11-tcp-smb.xml
+Temporary XML: removed after parsing and report generation
 
 NMAP OUTPUT:
   Host: 192.0.2.10 (example-host)

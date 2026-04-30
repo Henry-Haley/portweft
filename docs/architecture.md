@@ -40,9 +40,8 @@ portweft/nmap_runner.py
   subprocess execution, and Nmap error extraction.
 
 portweft/impacket_runner.py
-  Optional lazy Impacket package import, pip auto-install, recon module
-  allowlist, executable discovery, bounded subprocess output capture, and
-  command construction.
+  Optional lazy Impacket package import, recon module allowlist, executable
+  discovery, bounded subprocess output capture, and command construction.
 
 portweft/nmap_xml.py
   Streaming Nmap XML parsing, OS inference, bounded script-output extraction,

@@ -16,7 +16,7 @@ PortWeft focuses on:
 
 - single IPs, comma-separated IPs, and CIDR ranges
 - initial Nmap scan execution
-- XML output generation and parsing
+- temporary XML output generation and parsing
 - banner/service fingerprint matching and rough OS-family inference
 - Windows, Unix/Linux, and web-oriented service profiles
 - low-noise Nmap follow-up scans
@@ -43,8 +43,9 @@ Out of scope:
 - Optional: Impacket for `--impacket` recon modules
 
 No Python packages are required for normal use. When `--impacket` is provided,
-PortWeft imports Impacket for that optional phase and attempts to install it
-with pip if the package is missing.
+PortWeft imports Impacket for that optional phase. If the package is missing,
+PortWeft prints `Install with pip install .[impacket]` and exits without
+starting the scan.
 
 Manual optional Impacket package install from the source tree:
 
@@ -236,7 +237,8 @@ output/
 ```
 
 Nmap XML files are timestamped with the GMT scan start time while the run is in
-progress, then removed after the consolidated reports are written. Each
+progress, then removed after the consolidated reports are written. Reports note
+that temporary XML was removed, but do not reference deleted XML paths. Each
 responding host gets its own `<host>-report.txt`; hosts with no observed
 response do not get a report. `CUMULATIVE-report.txt` includes every responding
 host from the run. Dry-run mode only prints planned commands and does not write
@@ -306,6 +308,8 @@ UDP-centric services such as DNS, DHCP, TFTP, NTP, SNMP, Kerberos, NetBIOS,
 IKE/IPsec, Syslog, MSSQL Browser, SSDP, NFS/RPC, and Memcached. UDP scan
 failures are non-fatal; if Nmap reports a privilege, driver, or flag error,
 PortWeft prints the Nmap message and continues with available TCP results.
+TCP-only scan flags and conflicting port-selection flags are filtered out of
+the UDP companion command.
 
 UDP follow-up scans are only generated for services that Nmap reports as open
 UDP services.

@@ -33,6 +33,15 @@ class NmapOutputConflictError(PortWeftError):
     exit_code = 2
 
 
+class ImpacketUnavailableError(PortWeftError):
+    """Raised when optional Impacket recon is requested but unavailable."""
+
+    exit_code = 1
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+
+
 class OutputDirectoryError(PortWeftError):
     """Raised when output directories cannot be prepared."""
 

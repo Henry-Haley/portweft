@@ -10,9 +10,14 @@ import sys
 from pathlib import Path
 
 from portweft import APP_NAME
-from portweft.errors import OutputDirectoryError, PortWeftError
+from portweft.errors import (
+    ImpacketUnavailableError,
+    OutputDirectoryError,
+    PortWeftError,
+)
 from portweft.impacket_runner import (
     DEFAULT_MAX_IMPACKET_OUTPUT_CHARS,
+    ImpacketAvailability,
     ensure_impacket_package,
     module_supports_service,
     modules_for_profile,
@@ -156,6 +161,10 @@ def run(argv: list[str] | None = None) -> int:
     targets = split_targets(parsed.targets)
     if not targets:
         parser.error("At least one target is required.")
+    if parsed.impacket and not parsed.no_follow_up and not parsed.dry_run:
+        parsed.impacket_availability = require_impacket_package(
+            parsed.max_impacket_output_chars
+        )
 
     scan_started_at = dt.datetime.now(dt.timezone.utc)
     run_id = scan_started_at.strftime("%Y%m%d-%H%M%S-%fZ")
@@ -165,7 +174,6 @@ def run(argv: list[str] | None = None) -> int:
 
     initial_xml = scan_dir / f"{run_id}-initial.xml"
     udp_xml = scan_dir / f"{run_id}-udp.xml"
-    xml_paths = [initial_xml]
 
     print_step(f"{APP_NAME} run {run_id} starting")
     print_step(f"Scan started (GMT): {scan_started_at.strftime('%Y-%m-%d %H:%M:%S GMT')}")
@@ -186,7 +194,6 @@ def run(argv: list[str] | None = None) -> int:
         print_section_done("UDP companion scan", "skipped by --no-udp")
     else:
         udp_command = build_udp_command(parsed, targets, udp_xml, extra_nmap_args)
-        xml_paths.append(udp_xml)
         print_step("UDP companion scan starting")
         udp_result = run_command(udp_command, parsed.dry_run)
         if udp_result.ok:
@@ -224,9 +231,7 @@ def run(argv: list[str] | None = None) -> int:
         if parsed.impacket:
             print_section_done("Impacket recon", "skipped by --no-follow-up")
     else:
-        xml_paths.extend(
-            run_followups(parsed, extra_nmap_args, scan_dir, hosts, open_services)
-        )
+        run_followups(parsed, extra_nmap_args, scan_dir, hosts, open_services)
         if parsed.impacket:
             run_impacket_recon(parsed, hosts)
 
@@ -235,7 +240,6 @@ def run(argv: list[str] | None = None) -> int:
         report_dir,
         targets,
         scan_started_at,
-        xml_paths,
         hosts,
     )
     print_section_done("Report writing", f"{len(written_reports)} file(s) in {report_dir}")
@@ -265,6 +269,13 @@ def cleanup_scan_outputs(scan_dir: Path) -> None:
         raise OutputDirectoryError(str(scan_dir), str(error)) from error
 
 
+def require_impacket_package(max_output_chars: int) -> ImpacketAvailability:
+    availability = ensure_impacket_package(max_output_chars)
+    if availability.available:
+        return availability
+    raise ImpacketUnavailableError(availability.reason)
+
+
 def announce_host_findings(hosts: list[HostObservation]) -> None:
     for host in hosts:
         print_host_os(host)
@@ -277,8 +288,7 @@ def run_followups(
     scan_dir: Path,
     hosts: list[HostObservation],
     open_services: list[ServiceObservation],
-) -> list[Path]:
-    xml_paths: list[Path] = []
+) -> None:
     groups: dict[tuple[str, str, str], list[ServiceObservation]] = defaultdict(list)
     for service in open_services:
         profiles = match_profiles(service)
@@ -294,7 +304,6 @@ def run_followups(
         port_text = ",".join(str(port) for port in ports)
         run_id = scan_dir.name
         followup_xml = scan_dir / f"{run_id}-{safe_name(host)}-{protocol}-{profile}.xml"
-        xml_paths.append(followup_xml)
         print_step(f"Follow-up profile {profile} starting for {host}:{port_text}/{protocol}")
         command = build_followup_batch_command(
             parsed,
@@ -328,17 +337,15 @@ def run_followups(
             f"{host}:{port_text}/{protocol}",
         )
     print_section_done("Follow-up scans")
-    return xml_paths
 
 
 def run_impacket_recon(
     parsed: argparse.Namespace,
     hosts: list[HostObservation],
 ) -> None:
-    availability = ensure_impacket_package(parsed.max_impacket_output_chars)
-    if not availability.available:
-        print_section_done("Impacket recon", f"skipped: {availability.reason}")
-        return
+    availability = getattr(parsed, "impacket_availability", None)
+    if availability is None:
+        availability = require_impacket_package(parsed.max_impacket_output_chars)
     if availability.version:
         print_step(f"Impacket package imported: {availability.version}")
     else:

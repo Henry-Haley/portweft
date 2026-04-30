@@ -32,6 +32,31 @@ OUTPUT_FLAGS = {
     "--webxml",
 }
 
+UDP_INCOMPATIBLE_FLAGS = {
+    "-sS",
+    "-sT",
+    "-sA",
+    "-sW",
+    "-sM",
+    "-sN",
+    "-sF",
+    "-sX",
+    "-sY",
+    "-sZ",
+    "-F",
+}
+
+UDP_INCOMPATIBLE_PREFIXES = (
+    "-PA",
+    "-PS",
+)
+
+UDP_INCOMPATIBLE_OPTIONS_WITH_VALUES = {
+    "-p",
+    "--top-ports",
+    "--scanflags",
+}
+
 WINDOWS_NMAP_CANDIDATES = (
     Path("C:/Program Files/Nmap/nmap.exe"),
     Path("C:/Program Files (x86)/Nmap/nmap.exe"),
@@ -125,13 +150,60 @@ def build_udp_command(
     extra: list[str],
 ) -> list[str]:
     command = [resolved_nmap_path(parsed.nmap_path)]
-    command.extend(build_base_nmap_args(parsed, extra))
+    command.extend(build_base_nmap_args(parsed, filter_udp_nmap_args(extra)))
     if "-sU" not in command:
         command.append("-sU")
     command.extend(["-p", f"U:{parsed.udp_ports}"])
     command.extend(["-oX", str(xml_path)])
     command.extend(targets)
     return command
+
+
+def filter_udp_nmap_args(args: list[str]) -> list[str]:
+    filtered: list[str] = []
+    skip_next = False
+    for index, arg in enumerate(args):
+        if skip_next:
+            skip_next = False
+            continue
+        if arg in UDP_INCOMPATIBLE_FLAGS or has_udp_incompatible_prefix(arg):
+            if udp_option_value_is_next(arg, args, index):
+                skip_next = True
+            continue
+        if removes_next_udp_arg(arg):
+            skip_next = True
+            continue
+        if removes_current_udp_arg(arg):
+            continue
+        filtered.append(arg)
+    return filtered
+
+
+def has_udp_incompatible_prefix(arg: str) -> bool:
+    return any(
+        arg == prefix or arg.startswith(prefix)
+        for prefix in UDP_INCOMPATIBLE_PREFIXES
+    )
+
+
+def udp_option_value_is_next(arg: str, args: list[str], index: int) -> bool:
+    return arg in UDP_INCOMPATIBLE_PREFIXES and has_next_value(args, index)
+
+
+def removes_next_udp_arg(arg: str) -> bool:
+    return arg in UDP_INCOMPATIBLE_OPTIONS_WITH_VALUES
+
+
+def removes_current_udp_arg(arg: str) -> bool:
+    return (
+        arg.startswith("-p")
+        or arg.startswith("--top-ports=")
+        or arg.startswith("--scanflags=")
+    )
+
+
+def has_next_value(args: list[str], index: int) -> bool:
+    return index + 1 < len(args) and not args[index + 1].startswith("-")
 
 
 def build_followup_command(
