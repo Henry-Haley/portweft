@@ -77,6 +77,8 @@ class NmapRunnerTests(unittest.TestCase):
                 "nmap-test",
                 "-T4",
                 "-Pn",
+                "--script",
+                "banner",
                 "-sV",
                 "--version-light",
                 "-p",
@@ -96,6 +98,28 @@ class NmapRunnerTests(unittest.TestCase):
         )
         self.assertEqual(command.count("-sV"), 1)
         self.assertNotIn("--version-light", command)
+
+    def test_build_initial_command_preserves_nmap_all_ports_shorthand(self) -> None:
+        command = build_initial_command(
+            parsed_args(ports="-"),
+            ["192.0.2.10"],
+            Path("out.xml"),
+            [],
+        )
+
+        self.assertIn("-p-", command)
+        self.assertNotIn("-", command)
+
+    def test_build_initial_command_merges_banner_with_existing_script_arg(self) -> None:
+        command = build_initial_command(
+            parsed_args(ports="80"),
+            ["192.0.2.10"],
+            Path("out.xml"),
+            ["--script", "http-title"],
+        )
+
+        script_index = command.index("--script")
+        self.assertEqual(command[script_index + 1], "http-title,banner")
 
     def test_build_followup_command_uses_profile_scripts(self) -> None:
         service = ServiceObservation(

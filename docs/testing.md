@@ -41,13 +41,15 @@ portweft --help
 
 ```text
 tests/test_cli.py
-  CLI dry-run behavior, missing Nmap handling, unmatched banners, UDP toggles.
+  CLI dry-run behavior, target resolution, JSON reports, missing Nmap handling,
+  unmatched banners, UDP toggles.
 
 tests/test_matcher.py
   Banner-first matching, fallback ports, UDP-first ports, unmatched evidence.
 
 tests/test_nmap_runner.py
-  Nmap argument parsing, command construction, subprocess error handling.
+  Nmap argument parsing, command construction, banner script handling,
+  subprocess error handling.
 
 tests/test_impacket_runner.py
   Optional Impacket recon command construction, allowlist support, skipped
@@ -60,7 +62,10 @@ tests/test_profiles.py
   Profile shape and expected profile coverage.
 
 tests/test_reporting.py
-  Text report content.
+  Text and JSON report content.
+
+tests/test_targets.py
+  Domain resolution, IPv4/IPv6 handling, and original-target mapping.
 
 tests/fixtures/
   Static Nmap XML samples.

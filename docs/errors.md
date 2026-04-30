@@ -11,6 +11,8 @@ stable exit code where possible.
 | Nmap missing | Prints install/PATH guidance and exits `127`. |
 | Bad `--nmap-args` quoting | Prints the parse error and exits `2`. |
 | User passes Nmap output flags | Prints a PortWeft XML ownership message and exits `2`. |
+| Domain target cannot resolve | Prints a DNS error, skips that target, and continues. |
+| No targets remain after DNS resolution | Prints a controlled error and exits `2`. |
 | Nmap rejects a user flag | Prints Nmap's own error and returns Nmap's exit code. |
 | Output directory cannot be created | Prints the path and OS error. |
 | Nmap XML cannot be parsed | Prints the XML path and parse/read error. |
@@ -31,6 +33,7 @@ NmapNotFoundError
 NmapArgumentStringError
 NmapOutputConflictError
 ImpacketUnavailableError
+TargetResolutionError
 OutputDirectoryError
 NmapXmlParseError
 ReportWriteError

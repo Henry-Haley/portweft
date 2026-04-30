@@ -15,15 +15,17 @@ recommendations.
 PortWeft focuses on:
 
 - single IPs, comma-separated IPs, and CIDR ranges
+- domain names resolved before scanning
 - initial Nmap scan execution
 - temporary XML output generation and parsing
+- automatic low-noise banner grabbing
 - banner/service fingerprint matching and rough OS-family inference
 - Windows, Unix/Linux, and web-oriented service profiles
 - low-noise Nmap follow-up scans
 - optional low-noise Impacket recon for matched SMB/RPC services
 - custom Nmap argument passthrough where it fits the workflow
 - progress prints while the tool runs
-- final text reports with the gathered service facts
+- final text or JSON reports with the gathered service facts
 
 Out of scope:
 
@@ -33,7 +35,7 @@ Out of scope:
 - credential attacks
 - brute forcing
 - intrusive NSE scripts by default
-- internet lookups
+- internet enrichment lookups beyond DNS resolution
 - Impacket exploitation, relay, dumping, or brute-force tooling
 
 ## Requirements
@@ -94,7 +96,7 @@ portweft/
     Host and service observation objects.
 
   nmap_runner.py
-    Nmap command construction, passthrough handling, and execution.
+    Nmap command construction, banner grabbing, passthrough handling, and execution.
 
   impacket_runner.py
     Optional allowlisted Impacket recon command construction and execution.
@@ -110,7 +112,10 @@ portweft/
     evidence are preferred; port numbers are fallback hints.
 
   reporting.py
-    Writes per-host and cumulative text reports.
+    Writes per-host and cumulative text or JSON reports.
+
+  targets.py
+    Target DNS resolution and original-target mapping.
 
   utils.py
     Progress printing, command display, safe filenames, and formatting helpers.
@@ -132,10 +137,23 @@ Run the default scan against one host:
 python3 -m portweft 192.0.2.10
 ```
 
+Scan a domain name. PortWeft resolves it first, scans the resolved IP, and
+keeps the original name in reports:
+
+```bash
+python3 -m portweft example.com
+```
+
 Scan a comma-separated target list:
 
 ```bash
-python3 -m portweft 192.0.2.10,192.0.2.11
+python3 -m portweft 192.0.2.10,example.com
+```
+
+Scan every DNS answer instead of only the first:
+
+```bash
+python3 -m portweft example.com --resolve-mode all
 ```
 
 Scan a subnet:
@@ -172,6 +190,12 @@ Preview commands without running scans:
 
 ```bash
 python3 -m portweft 192.0.2.10 -p 22,80,443 --dry-run
+```
+
+Write JSON reports instead of text reports:
+
+```bash
+python3 -m portweft 192.0.2.10 --json
 ```
 
 Run optional allowlisted Impacket recon for matched SMB/RPC services:
@@ -236,6 +260,16 @@ output/
       <host>-report.txt
 ```
 
+With `--json`, the report files are:
+
+```text
+output/
+  reports/
+    <run-start-gmt>/
+      CUMULATIVE-report.json
+      <host>-report.json
+```
+
 Nmap XML files are timestamped with the GMT scan start time while the run is in
 progress, then removed after the consolidated reports are written. Reports note
 that temporary XML was removed, but do not reference deleted XML paths. Each
@@ -243,6 +277,10 @@ responding host gets its own `<host>-report.txt`; hosts with no observed
 response do not get a report. `CUMULATIVE-report.txt` includes every responding
 host from the run. Dry-run mode only prints planned commands and does not write
 files.
+
+The initial TCP scan includes Nmap service detection and the low-noise NSE
+`banner` script. If `--impacket` is not used, reports explicitly say
+`Status: not requested (--impacket not used)` in the Impacket section.
 
 The terminal also prints progress while the run is happening. Examples of the
 screen output include:

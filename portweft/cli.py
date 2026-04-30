@@ -14,6 +14,7 @@ from portweft.errors import (
     ImpacketUnavailableError,
     OutputDirectoryError,
     PortWeftError,
+    TargetResolutionError,
 )
 from portweft.impacket_runner import (
     DEFAULT_MAX_IMPACKET_OUTPUT_CHARS,
@@ -41,8 +42,17 @@ from portweft.nmap_xml import (
     merge_hosts,
     parse_nmap_xml,
 )
-from portweft.reporting import write_reports
+from portweft.reporting import write_json_reports, write_reports
+from portweft.targets import (
+    TargetResolution,
+    annotate_hosts_with_targets,
+    has_ipv6_target,
+    original_targets,
+    resolve_targets,
+    scan_targets,
+)
 from portweft.utils import (
+    print_error,
     print_followup_findings,
     print_host_os,
     print_open_services,
@@ -59,7 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Run Nmap, parse XML, and gather facts for open services.",
         allow_abbrev=False,
     )
-    parser.add_argument("targets", help="IP, comma-separated IPs, or CIDR range")
+    parser.add_argument("targets", help="IP, domain, comma-separated targets, or CIDR range")
     parser.add_argument("-p", "--ports", help="Ports for the initial scan")
     parser.add_argument("--top-ports", type=int, help="Nmap --top-ports value")
     parser.add_argument(
@@ -71,6 +81,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--output-dir",
         default="output",
         help="Directory for XML scan output and reports",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Write JSON reports instead of text reports",
+    )
+    parser.add_argument(
+        "--resolve-mode",
+        choices=("first", "all"),
+        default="first",
+        help="For domains with multiple DNS answers, scan the first IP or all IPs",
     )
     parser.add_argument(
         "--keep-runs",
@@ -132,8 +153,6 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return run(argv)
     except PortWeftError as error:
-        from portweft.utils import print_error
-
         print_error(str(error))
         return error.exit_code
 
@@ -161,6 +180,14 @@ def run(argv: list[str] | None = None) -> int:
     targets = split_targets(parsed.targets)
     if not targets:
         parser.error("At least one target is required.")
+    resolutions = resolve_targets(targets, parsed.resolve_mode)
+    log_resolution_failures(resolutions)
+    nmap_targets = scan_targets(resolutions)
+    if not nmap_targets:
+        raise TargetResolutionError("No valid targets to scan after DNS resolution.")
+    if has_ipv6_target(nmap_targets) and "-6" not in extra_nmap_args:
+        extra_nmap_args = ["-6", *extra_nmap_args]
+    report_targets = original_targets(resolutions)
     if parsed.impacket and not parsed.no_follow_up and not parsed.dry_run:
         parsed.impacket_availability = require_impacket_package(
             parsed.max_impacket_output_chars
@@ -177,12 +204,18 @@ def run(argv: list[str] | None = None) -> int:
 
     print_step(f"{APP_NAME} run {run_id} starting")
     print_step(f"Scan started (GMT): {scan_started_at.strftime('%Y-%m-%d %H:%M:%S GMT')}")
-    print_step(f"Targets: {', '.join(targets)}")
+    print_step(f"Targets: {', '.join(report_targets)}")
+    print_step(f"Resolved scan targets: {', '.join(nmap_targets)}")
 
     if not parsed.dry_run:
         prepare_output_dirs(scan_dir, report_dir)
 
-    initial_command = build_initial_command(parsed, targets, initial_xml, extra_nmap_args)
+    initial_command = build_initial_command(
+        parsed,
+        nmap_targets,
+        initial_xml,
+        extra_nmap_args,
+    )
     print_step("Initial Nmap scan starting")
     initial_result = run_command(initial_command, parsed.dry_run)
     if not initial_result.ok:
@@ -193,7 +226,7 @@ def run(argv: list[str] | None = None) -> int:
     if parsed.no_udp:
         print_section_done("UDP companion scan", "skipped by --no-udp")
     else:
-        udp_command = build_udp_command(parsed, targets, udp_xml, extra_nmap_args)
+        udp_command = build_udp_command(parsed, nmap_targets, udp_xml, extra_nmap_args)
         print_step("UDP companion scan starting")
         udp_result = run_command(udp_command, parsed.dry_run)
         if udp_result.ok:
@@ -207,12 +240,15 @@ def run(argv: list[str] | None = None) -> int:
 
     print_step(f"Parsing initial XML: {initial_xml}")
     hosts = parse_nmap_xml(initial_xml, parsed.max_script_output_chars)
+    annotate_hosts_with_targets(hosts, resolutions)
     print_section_done("Initial XML parse")
 
     if udp_result is not None and udp_result.ok:
         print_step(f"Parsing UDP XML: {udp_xml}")
         try:
-            merge_hosts(hosts, parse_nmap_xml(udp_xml, parsed.max_script_output_chars))
+            udp_hosts = parse_nmap_xml(udp_xml, parsed.max_script_output_chars)
+            annotate_hosts_with_targets(udp_hosts, resolutions)
+            merge_hosts(hosts, udp_hosts)
         except PortWeftError as error:
             from portweft.utils import print_error
 
@@ -226,22 +262,34 @@ def run(argv: list[str] | None = None) -> int:
     open_services = [service for host in hosts for service in host.services]
     print_step(f"Observed {len(hosts)} host(s) and {len(open_services)} open service(s)")
 
+    impacket_status = "not requested (--impacket not used)"
     if parsed.no_follow_up:
         print_section_done("Follow-up scans", "skipped by --no-follow-up")
         if parsed.impacket:
             print_section_done("Impacket recon", "skipped by --no-follow-up")
+            impacket_status = "skipped by --no-follow-up"
     else:
-        run_followups(parsed, extra_nmap_args, scan_dir, hosts, open_services)
+        run_followups(parsed, extra_nmap_args, scan_dir, hosts, open_services, resolutions)
         if parsed.impacket:
-            run_impacket_recon(parsed, hosts)
+            impacket_status = run_impacket_recon(parsed, hosts)
 
     print_step(f"Writing reports: {report_dir}")
-    written_reports = write_reports(
-        report_dir,
-        targets,
-        scan_started_at,
-        hosts,
-    )
+    if parsed.json:
+        written_reports = write_json_reports(
+            report_dir,
+            resolutions,
+            scan_started_at,
+            hosts,
+            impacket_status,
+        )
+    else:
+        written_reports = write_reports(
+            report_dir,
+            report_targets,
+            scan_started_at,
+            hosts,
+            impacket_status,
+        )
     print_section_done("Report writing", f"{len(written_reports)} file(s) in {report_dir}")
     cleanup_scan_outputs(scan_dir)
     prune_old_runs(output_root, parsed.keep_runs)
@@ -276,6 +324,14 @@ def require_impacket_package(max_output_chars: int) -> ImpacketAvailability:
     raise ImpacketUnavailableError(availability.reason)
 
 
+def log_resolution_failures(resolutions: list[TargetResolution]) -> None:
+    for resolution in resolutions:
+        if resolution.ok:
+            continue
+        print_error(f"DNS resolution failed for {resolution.original}: {resolution.error}")
+        print_error(f"Skipping target: {resolution.original}")
+
+
 def announce_host_findings(hosts: list[HostObservation]) -> None:
     for host in hosts:
         print_host_os(host)
@@ -288,6 +344,7 @@ def run_followups(
     scan_dir: Path,
     hosts: list[HostObservation],
     open_services: list[ServiceObservation],
+    resolutions: list[TargetResolution],
 ) -> None:
     groups: dict[tuple[str, str, str], list[ServiceObservation]] = defaultdict(list)
     for service in open_services:
@@ -320,6 +377,7 @@ def run_followups(
             continue
         try:
             update_hosts = parse_nmap_xml(followup_xml, parsed.max_script_output_chars)
+            annotate_hosts_with_targets(update_hosts, resolutions)
         except PortWeftError as error:
             from portweft.utils import print_error
 
@@ -342,7 +400,7 @@ def run_followups(
 def run_impacket_recon(
     parsed: argparse.Namespace,
     hosts: list[HostObservation],
-) -> None:
+) -> str:
     availability = getattr(parsed, "impacket_availability", None)
     if availability is None:
         availability = require_impacket_package(parsed.max_impacket_output_chars)
@@ -370,7 +428,7 @@ def run_impacket_recon(
 
     if not planned:
         print_section_done("Impacket recon", "no matching recon modules")
-        return
+        return "completed: no matching recon modules"
 
     print_step(f"Impacket recon starting ({len(planned)} module run(s))")
     for service, module_name in planned:
@@ -392,6 +450,7 @@ def run_impacket_recon(
         print_section_done(f"Impacket {module_name}", target)
 
     print_section_done("Impacket recon")
+    return "completed"
 
 
 def print_unmatched_service(service: ServiceObservation) -> None:

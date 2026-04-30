@@ -5,6 +5,7 @@ This document defines the intended scope for the first usable PortWeft release.
 ## In Scope
 
 - Run Nmap against one or more user-provided targets.
+- Resolve domain targets to IP addresses before scanning.
 - Use temporary Nmap XML output for parsing.
 - Parse hosts, open services, versions, banners, script output, and rough OS
   hints.
@@ -14,8 +15,9 @@ This document defines the intended scope for the first usable PortWeft release.
 - Optionally run allowlisted Impacket recon modules for matched SMB/RPC
   services.
 - Run a small UDP companion scan by default.
+- Run low-noise banner grabbing during the initial TCP scan.
 - Print progress to screen.
-- Write per-host and cumulative plain text reports.
+- Write per-host and cumulative plain text or JSON reports.
 - Support Linux, macOS, and Windows.
 - Use only the Python standard library plus Nmap for normal operation.
 
@@ -28,7 +30,7 @@ This document defines the intended scope for the first usable PortWeft release.
 - Credential attacks.
 - Password spraying.
 - Impacket exploitation, relay, dumping, or brute-force tooling.
-- Internet lookups.
+- Internet enrichment lookups beyond DNS resolution.
 - Payload delivery.
 - Post-exploitation.
 - Evasion features.
@@ -48,7 +50,7 @@ whether a service is vulnerable or recommend offensive next steps.
 - Optional Impacket recon requires the operator to install the optional package
   ahead of time, plus locally available Impacket console tools.
 - Service detection depends on Nmap probe quality and target behavior.
-- Reports are plain text only.
+- JSON reports are structured, but intentionally limited to observed scan data.
 - Profile definitions are currently built into `portweft/profiles.py`.
 
 ## Release Checklist

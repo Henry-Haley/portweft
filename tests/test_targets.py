@@ -1,0 +1,132 @@
+from __future__ import annotations
+
+import contextlib
+import io
+import socket
+import unittest
+from unittest.mock import patch
+
+from portweft.cli import main
+from portweft.models import HostObservation
+from portweft.targets import (
+    annotate_hosts_with_targets,
+    resolve_targets,
+    scan_targets,
+)
+
+
+class TargetResolutionTests(unittest.TestCase):
+    def test_valid_domain_resolves_with_getaddrinfo(self) -> None:
+        with patch(
+            "portweft.targets.socket.getaddrinfo",
+            return_value=[
+                (
+                    socket.AF_INET,
+                    socket.SOCK_STREAM,
+                    0,
+                    "",
+                    ("198.51.100.10", 0),
+                )
+            ],
+        ):
+            resolutions = resolve_targets(["example.test"])
+
+        self.assertEqual(resolutions[0].original, "example.test")
+        self.assertEqual(resolutions[0].addresses, ("198.51.100.10",))
+        self.assertEqual(scan_targets(resolutions), ["198.51.100.10"])
+
+    def test_invalid_domain_reports_error(self) -> None:
+        with patch(
+            "portweft.targets.socket.getaddrinfo",
+            side_effect=socket.gaierror("name not known"),
+        ):
+            resolutions = resolve_targets(["missing.example"])
+
+        self.assertFalse(resolutions[0].ok)
+        self.assertIn("name not known", resolutions[0].error)
+        self.assertEqual(scan_targets(resolutions), [])
+
+    def test_mix_of_ip_and_domain_preserves_original_target(self) -> None:
+        with patch(
+            "portweft.targets.socket.getaddrinfo",
+            return_value=[
+                (
+                    socket.AF_INET,
+                    socket.SOCK_STREAM,
+                    0,
+                    "",
+                    ("198.51.100.20", 0),
+                )
+            ],
+        ) as getaddrinfo:
+            resolutions = resolve_targets(["192.0.2.10", "example.test"])
+
+        getaddrinfo.assert_called_once_with(
+            "example.test",
+            None,
+            type=socket.SOCK_STREAM,
+        )
+        self.assertEqual(scan_targets(resolutions), ["192.0.2.10", "198.51.100.20"])
+
+        hosts = [
+            HostObservation(address="192.0.2.10"),
+            HostObservation(address="198.51.100.20"),
+        ]
+        annotate_hosts_with_targets(hosts, resolutions)
+
+        self.assertEqual(hosts[0].display_name(), "192.0.2.10")
+        self.assertEqual(hosts[1].display_name(), "example.test -> 198.51.100.20")
+
+    def test_getaddrinfo_all_mode_keeps_multiple_ipv4_and_ipv6_addresses(self) -> None:
+        with patch(
+            "portweft.targets.socket.getaddrinfo",
+            return_value=[
+                (
+                    socket.AF_INET6,
+                    socket.SOCK_STREAM,
+                    0,
+                    "",
+                    ("2001:db8::10", 0, 0, 0),
+                ),
+                (
+                    socket.AF_INET,
+                    socket.SOCK_STREAM,
+                    0,
+                    "",
+                    ("198.51.100.30", 0),
+                ),
+            ],
+        ):
+            first_resolution = resolve_targets(["multi.example"], mode="first")[0]
+            all_resolution = resolve_targets(["multi.example"], mode="all")[0]
+
+        self.assertEqual(first_resolution.addresses, ("2001:db8::10",))
+        self.assertEqual(
+            all_resolution.addresses,
+            ("2001:db8::10", "198.51.100.30"),
+        )
+
+    def test_ipv6_domain_adds_ipv6_nmap_flag_in_dry_run(self) -> None:
+        stdout = io.StringIO()
+        with patch(
+            "portweft.targets.socket.getaddrinfo",
+            return_value=[
+                (
+                    socket.AF_INET6,
+                    socket.SOCK_STREAM,
+                    0,
+                    "",
+                    ("2001:db8::10", 0, 0, 0),
+                )
+            ],
+        ):
+            with contextlib.redirect_stdout(stdout):
+                exit_code = main(["ipv6.example", "--dry-run", "--no-udp"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("-6", stdout.getvalue())
+        self.assertIn("2001:db8::10", stdout.getvalue())
+
+
+if __name__ == "__main__":
+    unittest.main()

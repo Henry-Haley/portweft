@@ -42,6 +42,12 @@ class ImpacketUnavailableError(PortWeftError):
         super().__init__(reason)
 
 
+class TargetResolutionError(PortWeftError):
+    """Raised when no input target can be resolved or scanned."""
+
+    exit_code = 2
+
+
 class OutputDirectoryError(PortWeftError):
     """Raised when output directories cannot be prepared."""
 

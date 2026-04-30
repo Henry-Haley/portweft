@@ -27,6 +27,8 @@ class ServiceObservation:
 class HostObservation:
     address: str
     hostname: str = ""
+    original_target: str = ""
+    resolved_ip: str = ""
     status: str = ""
     os_family: str = "unknown"
     os_name: str = ""
@@ -35,9 +37,12 @@ class HostObservation:
     services: list[ServiceObservation] = field(default_factory=list)
 
     def display_name(self) -> str:
+        address_label = self.address
+        if self.original_target and self.original_target != self.address:
+            address_label = f"{self.original_target} -> {self.address}"
         if self.hostname:
-            return f"{self.address} ({self.hostname})"
-        return self.address
+            return f"{address_label} ({self.hostname})"
+        return address_label
 
     def os_label(self) -> str:
         if self.os_name:

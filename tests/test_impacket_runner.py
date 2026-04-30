@@ -159,8 +159,9 @@ class ImpacketRunnerTests(unittest.TestCase):
                 return_value=ImpacketAvailability(available=True, version="0.12.0"),
             ):
                 with contextlib.redirect_stdout(io.StringIO()):
-                    run_impacket_recon(parsed, [host])
+                    status = run_impacket_recon(parsed, [host])
 
+        self.assertEqual(status, "completed")
         self.assertEqual(service.scripts["impacket-samrdump"], "samrdump output")
         self.assertEqual(service.scripts["impacket-rpcdump"], "rpcdump output")
 

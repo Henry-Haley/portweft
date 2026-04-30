@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
+import socket
 import subprocess
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from portweft.cli import (
@@ -15,7 +18,7 @@ from portweft.cli import (
     prune_old_runs,
 )
 from portweft.impacket_runner import ImpacketAvailability
-from portweft.models import ServiceObservation
+from portweft.models import HostObservation, ServiceObservation
 from tests.helpers import temporary_directory
 
 
@@ -77,12 +80,85 @@ class CliTests(unittest.TestCase):
             output = stdout.getvalue()
             self.assertEqual(exit_code, 0)
             self.assertIn("Initial Nmap scan starting", output)
-            self.assertIn("-T4 -Pn -sV --version-light -p 22,80", output)
+            self.assertIn("-T4 -Pn --script banner -sV --version-light -p 22,80", output)
             self.assertIn("UDP companion scan starting", output)
             self.assertIn("-sU -p U:", output)
             self.assertIn("Dry run complete", output)
             self.assertFalse((Path(temp_dir) / "scans").exists())
             self.assertFalse((Path(temp_dir) / "reports").exists())
+
+    def test_dry_run_resolves_domain_before_building_nmap_command(self) -> None:
+        with temporary_directory() as temp_dir:
+            stdout = io.StringIO()
+            with patch(
+                "portweft.targets.socket.getaddrinfo",
+                return_value=[
+                    (
+                        socket.AF_INET,
+                        socket.SOCK_STREAM,
+                        0,
+                        "",
+                        ("198.51.100.10", 0),
+                    )
+                ],
+            ):
+                with contextlib.redirect_stdout(stdout):
+                    exit_code = main(
+                        [
+                            "example.test",
+                            "--dry-run",
+                            "--output-dir",
+                            temp_dir,
+                        ]
+                    )
+
+        output = stdout.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Targets: example.test", output)
+        self.assertIn("Resolved scan targets: 198.51.100.10", output)
+        self.assertIn("198.51.100.10", output)
+        self.assertNotIn("example.test -sV", output)
+
+    def test_dry_run_preserves_nmap_all_ports_shorthand(self) -> None:
+        with temporary_directory() as temp_dir:
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                exit_code = main(
+                    [
+                        "127.0.0.1",
+                        "-p-",
+                        "--dry-run",
+                        "--output-dir",
+                        temp_dir,
+                    ]
+                )
+
+        output = stdout.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertIn("-p-", output)
+        self.assertNotIn("-p -", output)
+
+    def test_resolution_failure_skips_target_and_continues(self) -> None:
+        with temporary_directory() as temp_dir:
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with patch(
+                "portweft.targets.socket.getaddrinfo",
+                side_effect=socket.gaierror("name not known"),
+            ):
+                with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    exit_code = main(
+                        [
+                            "missing.example,127.0.0.1",
+                            "--dry-run",
+                            "--output-dir",
+                            temp_dir,
+                        ]
+                    )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("DNS resolution failed for missing.example", stderr.getvalue())
+        self.assertIn("Resolved scan targets: 127.0.0.1", stdout.getvalue())
 
     def test_missing_nmap_is_graceful_error_before_other_nmap_arg_validation(self) -> None:
         with temporary_directory() as temp_dir:
@@ -169,6 +245,60 @@ class CliTests(unittest.TestCase):
         self.assertEqual(exit_code, 1)
         self.assertIn("Install with pip install .[impacket]", stderr.getvalue())
         run_command.assert_not_called()
+
+    def test_json_flag_writes_json_reports_without_text_reports(self) -> None:
+        host = HostObservation(
+            address="192.0.2.10",
+            status="up",
+            services=[
+                ServiceObservation(
+                    host="192.0.2.10",
+                    port=80,
+                    protocol="tcp",
+                    state="open",
+                    service_name="http",
+                    scripts={"banner": "HTTP/1.1 200 OK"},
+                )
+            ],
+        )
+        with temporary_directory() as temp_dir:
+            with patch("portweft.cli.ensure_nmap_available"):
+                with patch(
+                    "portweft.cli.run_command",
+                    return_value=SimpleNamespace(ok=True, exit_code=0),
+                ):
+                    with patch("portweft.cli.parse_nmap_xml", return_value=[host]):
+                        with contextlib.redirect_stdout(io.StringIO()):
+                            exit_code = main(
+                                [
+                                    "192.0.2.10",
+                                    "--json",
+                                    "--no-udp",
+                                    "--no-follow-up",
+                                    "--output-dir",
+                                    temp_dir,
+                                ]
+                            )
+
+            report_root = Path(temp_dir) / "reports"
+            json_reports = sorted(report_root.glob("*/*.json"))
+            text_reports = sorted(report_root.glob("*/*.txt"))
+            cumulative = json.loads(
+                next(path for path in json_reports if path.name == "CUMULATIVE-report.json")
+                .read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(len(json_reports), 2)
+        self.assertEqual(text_reports, [])
+        self.assertEqual(cumulative["target"], "192.0.2.10")
+        self.assertEqual(cumulative["resolved_ip"], "192.0.2.10")
+        banner = cumulative["hosts"][0]["services"][0]["nse_results"]["banner"]
+        self.assertEqual(banner, "HTTP/1.1 200 OK")
+        self.assertEqual(
+            cumulative["impacket_status"],
+            "not requested (--impacket not used)",
+        )
 
     def test_prune_old_runs_keeps_newest_outputs(self) -> None:
         with temporary_directory() as temp_dir:

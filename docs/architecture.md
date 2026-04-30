@@ -8,6 +8,7 @@ external runtime dependency.
 ```text
 CLI arguments
   -> target parsing
+  -> DNS resolution for domain targets
   -> initial TCP Nmap scan
   -> UDP companion Nmap scan unless disabled
   -> XML parsing
@@ -16,7 +17,7 @@ CLI arguments
   -> optional allowlisted Impacket recon
   -> merged host/service observations
   -> terminal progress output
-  -> per-host and cumulative text reports
+  -> per-host and cumulative text or JSON reports
   -> temporary XML cleanup
 ```
 
@@ -37,7 +38,8 @@ portweft/models.py
 
 portweft/nmap_runner.py
   Nmap command construction, passthrough validation, executable discovery,
-  subprocess execution, and Nmap error extraction.
+  automatic banner script handling, subprocess execution, and Nmap error
+  extraction.
 
 portweft/impacket_runner.py
   Optional lazy Impacket package import, recon module allowlist, executable
@@ -55,7 +57,10 @@ portweft/matcher.py
   Banner-first service-to-profile matching.
 
 portweft/reporting.py
-  Streaming per-host and cumulative text report generation.
+  Streaming per-host and cumulative text/JSON report generation.
+
+portweft/targets.py
+  Domain resolution, scan target expansion, and original-target host annotation.
 
 portweft/errors.py
   Expected runtime exceptions with stable exit codes.
@@ -88,6 +93,9 @@ The initial TCP XML is parsed first. If the UDP companion scan succeeds, its XML
 is parsed and merged into the same host list. Follow-up scans then merge script
 output, optional Impacket recon output, updated product/version fields, and new
 services back into the existing host observations.
+
+Domain names are resolved before Nmap runs. Nmap receives resolved IP addresses,
+while parsed hosts are annotated with the original input target for reports.
 
 The merge key for services is:
 

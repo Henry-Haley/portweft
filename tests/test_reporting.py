@@ -1,11 +1,19 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import unittest
 from pathlib import Path
 
 from portweft.models import HostObservation, ServiceObservation
-from portweft.reporting import CUMULATIVE_REPORT_NAME, write_report, write_reports
+from portweft.reporting import (
+    CUMULATIVE_JSON_REPORT_NAME,
+    CUMULATIVE_REPORT_NAME,
+    write_json_reports,
+    write_report,
+    write_reports,
+)
+from portweft.targets import TargetResolution
 from tests.helpers import temporary_directory
 
 
@@ -59,6 +67,8 @@ class ReportingTests(unittest.TestCase):
         scan_started_at = dt.datetime(2026, 4, 29, 20, 15, 30, tzinfo=dt.timezone.utc)
         responding_host = HostObservation(
             address="192.0.2.10",
+            original_target="linux.example",
+            resolved_ip="192.0.2.10",
             hostname="linux.example",
             status="up",
             services=[
@@ -76,6 +86,12 @@ class ReportingTests(unittest.TestCase):
                 )
             ],
         )
+        no_ports_host = HostObservation(
+            address="192.0.2.11",
+            original_target="empty.example",
+            resolved_ip="192.0.2.11",
+            status="up",
+        )
         silent_host = HostObservation(address="192.0.2.99", status="down")
 
         with temporary_directory() as temp_dir:
@@ -84,26 +100,33 @@ class ReportingTests(unittest.TestCase):
                 report_dir,
                 ["192.0.2.0/24"],
                 scan_started_at,
-                [responding_host, silent_host],
+                [responding_host, no_ports_host, silent_host],
+                "not requested (--impacket not used)",
             )
 
             cumulative_path = report_dir / CUMULATIVE_REPORT_NAME
             host_path = report_dir / "192.0.2.10-report.txt"
+            no_ports_path = report_dir / "192.0.2.11-report.txt"
             silent_path = report_dir / "192.0.2.99-report.txt"
             cumulative_exists = cumulative_path.exists()
             host_exists = host_path.exists()
+            no_ports_exists = no_ports_path.exists()
             silent_exists = silent_path.exists()
             host_report = host_path.read_text(encoding="utf-8")
+            no_ports_report = no_ports_path.read_text(encoding="utf-8")
 
-        self.assertEqual(set(written), {cumulative_path, host_path})
+        self.assertEqual(set(written), {cumulative_path, host_path, no_ports_path})
         self.assertTrue(cumulative_exists)
         self.assertTrue(host_exists)
+        self.assertTrue(no_ports_exists)
         self.assertFalse(silent_exists)
         self.assertIn("Scan started (GMT): 2026-04-29 20:15:30 GMT", host_report)
+        self.assertIn("linux.example -> 192.0.2.10", host_report)
         self.assertIn("Temporary XML: removed after parsing", host_report)
         self.assertNotIn(".xml", host_report)
         self.assertIn("NMAP OUTPUT:", host_report)
         self.assertIn("IMPACKET RESULTS:", host_report)
+        self.assertIn("Status: not requested (--impacket not used)", host_report)
         self.assertLess(
             host_report.index("NMAP OUTPUT:"),
             host_report.index("IMPACKET RESULTS:"),
@@ -114,6 +137,63 @@ class ReportingTests(unittest.TestCase):
         self.assertNotIn("impacket-rpcdump:", nmap_section)
         self.assertIn("impacket-rpcdump:", impacket_section)
         self.assertIn("rpc output", impacket_section)
+        self.assertIn("empty.example -> 192.0.2.11", no_ports_report)
+        self.assertIn("none observed", no_ports_report)
+
+    def test_write_json_reports_outputs_parseable_structured_data(self) -> None:
+        scan_started_at = dt.datetime(2026, 4, 29, 20, 15, 30, tzinfo=dt.timezone.utc)
+        host = HostObservation(
+            address="198.51.100.10",
+            original_target="example.test",
+            resolved_ip="198.51.100.10",
+            status="up",
+            services=[
+                ServiceObservation(
+                    host="198.51.100.10",
+                    port=445,
+                    protocol="tcp",
+                    state="open",
+                    service_name="microsoft-ds",
+                    product="Microsoft Windows SMB",
+                    scripts={
+                        "smb2-security-mode": "signing not required",
+                        "impacket-samrdump": "users observed",
+                    },
+                )
+            ],
+        )
+        resolutions = [
+            TargetResolution(
+                original="example.test",
+                addresses=("198.51.100.10",),
+            )
+        ]
+
+        with temporary_directory() as temp_dir:
+            report_dir = Path(temp_dir) / "reports"
+            written = write_json_reports(
+                report_dir,
+                resolutions,
+                scan_started_at,
+                [host],
+                "completed",
+            )
+            cumulative = json.loads(
+                (report_dir / CUMULATIVE_JSON_REPORT_NAME).read_text(encoding="utf-8")
+            )
+            host_report = json.loads(
+                (report_dir / "198.51.100.10-report.json").read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(len(written), 2)
+        self.assertEqual(host_report["target"], "example.test")
+        self.assertEqual(host_report["resolved_ip"], "198.51.100.10")
+        self.assertEqual(host_report["impacket_status"], "completed")
+        service = host_report["hosts"][0]["services"][0]
+        self.assertIn("smb", service["matched_profiles"])
+        self.assertEqual(service["nse_results"]["smb2-security-mode"], "signing not required")
+        self.assertEqual(service["impacket_results"]["impacket-samrdump"], "users observed")
+        self.assertEqual(cumulative["targets"][0]["target"], "example.test")
 
 
 if __name__ == "__main__":

@@ -61,16 +61,33 @@ Single target:
 python3 -m portweft 192.0.2.10
 ```
 
+Domain target:
+
+```bash
+python3 -m portweft example.com
+```
+
+PortWeft resolves domain names with `socket.getaddrinfo()` before scanning,
+passes resolved IP addresses to Nmap, and keeps the original domain name in
+reports. DNS failures are logged, skipped, and do not stop other targets.
+
 Comma-separated targets:
 
 ```bash
-python3 -m portweft 192.0.2.10,192.0.2.11
+python3 -m portweft 192.0.2.10,example.com
 ```
 
 CIDR range:
 
 ```bash
 python3 -m portweft 192.0.2.0/24
+```
+
+By default, domains with multiple DNS answers use the first address returned.
+To scan every returned IPv4/IPv6 address:
+
+```bash
+python3 -m portweft example.com --resolve-mode all
 ```
 
 ## TCP Ports
@@ -89,6 +106,10 @@ python3 -m portweft 192.0.2.10 --top-ports 1000
 
 If neither `-p` nor `--top-ports` is provided, PortWeft lets Nmap use its
 default TCP port selection.
+
+The initial TCP scan automatically includes Nmap service detection and the
+low-noise NSE `banner` script. If you pass your own `--script` expression,
+PortWeft adds `banner` to it instead of replacing it.
 
 ## Nmap Passthrough
 
@@ -142,6 +163,18 @@ python3 -m portweft 192.0.2.10 -p 22,80,443 --dry-run -- -T4 -Pn
 
 Dry-run mode prints the exact Nmap commands that would be executed and does not
 write output files.
+
+## JSON Reports
+
+Write structured JSON reports instead of formatted text:
+
+```bash
+python3 -m portweft 192.0.2.10 --json
+```
+
+JSON reports include targets, DNS resolution details, host information,
+services, matched profiles, NSE results, and Impacket results when present.
+The report files contain only JSON data.
 
 ## Optional Impacket Recon
 
@@ -224,6 +257,16 @@ output/
       <host>-report.txt
 ```
 
+With `--json`:
+
+```text
+output/
+  reports/
+    <run-start-gmt>/
+      CUMULATIVE-report.json
+      <host>-report.json
+```
+
 Nmap XML files are temporary working files under `output/scans/<run-start-gmt>/`
 while the run is active. Their names include the GMT scan start timestamp, and
 PortWeft removes them after the final reports are written. Reports note that
@@ -231,4 +274,5 @@ temporary XML was removed, but do not reference deleted XML paths. Each
 responding host gets one report named after the host address, and
 `CUMULATIVE-report.txt` contains all responding hosts from the run. The report
 keeps Nmap open-port and NSE output separate from the `IMPACKET RESULTS:`
-section.
+section. If `--impacket` was not used, that section explicitly reports
+`Status: not requested (--impacket not used)`.

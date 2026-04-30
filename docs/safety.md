@@ -6,12 +6,13 @@ fact collection.
 ## What PortWeft Does
 
 - Runs Nmap scans.
+- Resolves domain targets to IP addresses before scanning.
 - Uses temporary Nmap XML for parsing.
 - Parses open services, banners, versions, and script output.
 - Matches services to low-noise follow-up profiles.
 - Optionally runs allowlisted Impacket recon modules when `--impacket` is set.
 - Prints progress to screen.
-- Writes per-host and cumulative text reports.
+- Writes per-host and cumulative text or JSON reports.
 
 ## What PortWeft Does Not Do
 
@@ -22,7 +23,7 @@ fact collection.
 - Decide that a version is vulnerable.
 - Run intrusive NSE scripts by default.
 - Run Impacket exploitation, relay, dumping, or brute-force tooling.
-- Perform internet lookups.
+- Perform internet enrichment lookups beyond DNS resolution.
 
 ## Default TCP Behavior
 
@@ -31,6 +32,10 @@ The initial scan uses Nmap service detection unless disabled:
 ```text
 -sV --version-light
 ```
+
+It also runs the low-noise NSE `banner` script by default so raw service
+banners are captured when available. If the operator supplies a custom
+`--script` expression, PortWeft adds `banner` to that expression.
 
 User-provided Nmap flags are passed through where possible. PortWeft blocks
 Nmap output flags because it owns XML output generation.

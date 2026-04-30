@@ -62,6 +62,8 @@ WINDOWS_NMAP_CANDIDATES = (
     Path("C:/Program Files (x86)/Nmap/nmap.exe"),
 )
 
+BANNER_SCRIPT = "banner"
+
 
 @dataclass
 class CommandResult:
@@ -133,14 +135,42 @@ def build_initial_command(
     extra: list[str],
 ) -> list[str]:
     command = [resolved_nmap_path(parsed.nmap_path)]
-    command.extend(build_base_nmap_args(parsed, extra))
+    command.extend(build_base_nmap_args(parsed, with_nse_script(extra, BANNER_SCRIPT)))
     if parsed.ports:
-        command.extend(["-p", parsed.ports])
+        command.extend(nmap_port_args(parsed.ports))
     elif parsed.top_ports:
         command.extend(["--top-ports", str(parsed.top_ports)])
     command.extend(["-oX", str(xml_path)])
     command.extend(targets)
     return command
+
+
+def nmap_port_args(ports: str) -> list[str]:
+    if ports == "-":
+        return ["-p-"]
+    return ["-p", ports]
+
+
+def with_nse_script(args: list[str], script_name: str) -> list[str]:
+    updated = list(args)
+    for index, arg in enumerate(updated):
+        if arg == "--script" and index + 1 < len(updated):
+            updated[index + 1] = script_expression_with(updated[index + 1], script_name)
+            return updated
+        if arg.startswith("--script="):
+            expression = arg.split("=", 1)[1]
+            updated[index] = f"--script={script_expression_with(expression, script_name)}"
+            return updated
+    updated.extend(["--script", script_name])
+    return updated
+
+
+def script_expression_with(expression: str, script_name: str) -> str:
+    scripts = [script.strip() for script in expression.split(",") if script.strip()]
+    if script_name in scripts:
+        return expression
+    scripts.append(script_name)
+    return ",".join(scripts)
 
 
 def build_udp_command(
