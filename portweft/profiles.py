@@ -108,6 +108,7 @@ SERVICE_PROFILES: dict[str, dict[str, object]] = {
             "smbd",
         },
         "scripts": ["smb-protocols", "smb2-security-mode", "smb2-time"],
+        "impacket": ["samrdump", "rpcdump"],
     },
     "ssh": {
         "ports": {22, 2222},
@@ -227,6 +228,7 @@ SERVICE_PROFILES: dict[str, dict[str, object]] = {
         "services": {"rpcbind", "msrpc"},
         "banner_terms": {"msrpc", "portmapper", "rpcbind"},
         "scripts": ["rpcinfo"],
+        "impacket": ["rpcdump"],
     },
     "snmp": {
         "ports": {161, 162},

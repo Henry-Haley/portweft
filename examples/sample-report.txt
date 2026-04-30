@@ -29,4 +29,6 @@ Host: 192.0.2.11
     - 445/tcp microsoft-ds Microsoft Windows SMB [profiles: smb]
       smb2-security-mode:
         Message signing enabled but not required
+      impacket-samrdump:
+        SAMR users observed if anonymous enumeration is allowed
     - 3389/tcp ms-wbt-server Microsoft Terminal Services [profiles: rdp]

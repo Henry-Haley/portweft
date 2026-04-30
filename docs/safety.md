@@ -9,6 +9,7 @@ fact collection.
 - Saves Nmap XML.
 - Parses open services, banners, versions, and script output.
 - Matches services to low-noise follow-up profiles.
+- Optionally runs allowlisted Impacket recon modules when `--impacket` is set.
 - Prints progress to screen.
 - Writes a text report.
 
@@ -20,6 +21,7 @@ fact collection.
 - Look up CVEs.
 - Decide that a version is vulnerable.
 - Run intrusive NSE scripts by default.
+- Run Impacket exploitation, relay, dumping, or brute-force tooling.
 - Perform internet lookups.
 
 ## Default TCP Behavior
@@ -73,10 +75,29 @@ UDP companion scan failed; continuing with available TCP results
 Nmap's error text is printed so the operator can decide whether to rerun with
 different privileges or flags.
 
+## Optional Impacket Recon
+
+Impacket recon is disabled by default. When enabled with `--impacket`, PortWeft
+imports the Impacket Python package, attempts to install it with pip if it is
+missing, then only runs allowlisted recon modules against services that were
+already observed open and matched to a compatible profile.
+
+Current allowlist:
+
+```text
+samrdump, rpcdump
+```
+
+The allowlist excludes Impacket tooling for exploitation, relaying,
+credential dumping, password guessing, SID brute forcing, or vulnerability
+checks. If the automatic Impacket install fails or a required command is still
+not available, PortWeft prints a skip message and continues.
+
 ## Safe Operating Practices
 
 - Use `--dry-run` before scanning unfamiliar ranges.
 - Use `--no-udp` when UDP is outside scope.
+- Use `--impacket` only when SMB/RPC enumeration is in scope.
 - Use `-p` or `--top-ports` to keep scan scope explicit.
 - Keep Nmap timing flags appropriate for the environment.
 - Treat all targets as requiring authorization.

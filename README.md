@@ -20,6 +20,7 @@ PortWeft focuses on:
 - banner/service fingerprint matching and rough OS-family inference
 - Windows, Unix/Linux, and web-oriented service profiles
 - low-noise Nmap follow-up scans
+- optional low-noise Impacket recon for matched SMB/RPC services
 - custom Nmap argument passthrough where it fits the workflow
 - progress prints while the tool runs
 - final text reports with the gathered service facts
@@ -33,13 +34,23 @@ Out of scope:
 - brute forcing
 - intrusive NSE scripts by default
 - internet lookups
+- Impacket exploitation, relay, dumping, or brute-force tooling
 
 ## Requirements
 
 - Python 3.10+
 - Nmap available on `PATH`
+- Optional: Impacket for `--impacket` recon modules
 
-No Python packages are required for the current skeleton.
+No Python packages are required for normal use. When `--impacket` is provided,
+PortWeft imports Impacket for that optional phase and attempts to install it
+with pip if the package is missing.
+
+Manual optional Impacket package install from the source tree:
+
+```bash
+python3 -m pip install ".[impacket]"
+```
 
 PortWeft is OS-neutral Python and is intended to run on Linux, macOS, and
 Windows. Linux usage is the primary path; Windows is supported for development
@@ -83,6 +94,9 @@ portweft/
 
   nmap_runner.py
     Nmap command construction, passthrough handling, and execution.
+
+  impacket_runner.py
+    Optional allowlisted Impacket recon command construction and execution.
 
   nmap_xml.py
     Nmap XML parsing, OS inference, script output parsing, and result merging.
@@ -159,6 +173,12 @@ Preview commands without running scans:
 python3 -m portweft 192.0.2.10 -p 22,80,443 --dry-run
 ```
 
+Run optional allowlisted Impacket recon for matched SMB/RPC services:
+
+```bash
+python3 -m portweft 192.0.2.10 --impacket
+```
+
 Keep only the newest output runs:
 
 ```bash
@@ -228,6 +248,7 @@ Open ports for 192.0.2.10:
   22/tcp ssh OpenSSH 8.9p1 Ubuntu
   443/tcp https nginx 1.24.0
 Follow-up profile web complete: 192.0.2.10:443/tcp
+Impacket samrdump complete: 192.0.2.11:445/tcp
 Report writing complete: output/reports/<run>.txt
 ```
 
@@ -253,6 +274,7 @@ from:
 - extra service information
 - SSL/TLS tunnel metadata
 - NSE script output gathered by earlier scans
+- optional Impacket recon output gathered by matched profiles
 
 Port numbers are still used, but only as fallback hints when the banner or
 service fingerprint does not clearly identify the service. This allows
@@ -305,6 +327,8 @@ The default behavior is intentionally conservative:
 - Follow-up scans are selected only for services that were observed open.
 - Follow-up scans are batched by host, protocol, and service profile.
 - Follow-up scripts are limited to basic information-gathering NSE scripts.
+- Optional Impacket modules are limited to allowlisted recon commands.
 - NSE script output retained in memory and reports is capped.
+- Impacket output retained in memory and reports is capped.
 - No vulnerability scripts are selected by default.
 - `--dry-run` shows the exact commands before execution.

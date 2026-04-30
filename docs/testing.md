@@ -49,6 +49,10 @@ tests/test_matcher.py
 tests/test_nmap_runner.py
   Nmap argument parsing, command construction, subprocess error handling.
 
+tests/test_impacket_runner.py
+  Optional Impacket recon command construction, allowlist support, skipped
+  tools, bounded output, and CLI result attachment.
+
 tests/test_nmap_xml.py
   XML parsing, malformed XML, OS detection, merge behavior.
 

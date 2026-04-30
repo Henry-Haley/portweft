@@ -10,6 +10,13 @@ from pathlib import Path
 
 from portweft import APP_NAME
 from portweft.errors import OutputDirectoryError, PortWeftError
+from portweft.impacket_runner import (
+    DEFAULT_MAX_IMPACKET_OUTPUT_CHARS,
+    ensure_impacket_package,
+    module_supports_service,
+    modules_for_profile,
+    run_impacket_module,
+)
 from portweft.matcher import evidence_summary, has_observable_evidence, match_profiles
 from portweft.models import HostObservation, ServiceObservation
 from portweft.nmap_runner import (
@@ -73,6 +80,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum NSE script output characters retained per script",
     )
     parser.add_argument(
+        "--impacket",
+        action="store_true",
+        help="Run optional low-noise Impacket recon modules for matched services",
+    )
+    parser.add_argument(
+        "--max-impacket-output-chars",
+        type=int,
+        default=DEFAULT_MAX_IMPACKET_OUTPUT_CHARS,
+        help="Maximum Impacket output characters retained per module",
+    )
+    parser.add_argument(
         "--nmap-path",
         default="nmap",
         help="Nmap executable path or name on PATH",
@@ -127,6 +145,8 @@ def run(argv: list[str] | None = None) -> int:
         parser.error("--keep-runs must be zero or greater.")
     if parsed.max_script_output_chars < 0:
         parser.error("--max-script-output-chars must be zero or greater.")
+    if parsed.max_impacket_output_chars < 0:
+        parser.error("--max-impacket-output-chars must be zero or greater.")
     ensure_nmap_available(parsed.nmap_path, parsed.dry_run)
     extra_nmap_args = split_nmap_args(parsed.nmap_args) + normalize_unknown_nmap_args(
         unknown_nmap_args
@@ -198,8 +218,12 @@ def run(argv: list[str] | None = None) -> int:
 
     if parsed.no_follow_up:
         print_section_done("Follow-up scans", "skipped by --no-follow-up")
+        if parsed.impacket:
+            print_section_done("Impacket recon", "skipped by --no-follow-up")
     else:
         run_followups(parsed, extra_nmap_args, scan_dir, hosts, open_services)
+        if parsed.impacket:
+            run_impacket_recon(parsed, hosts)
 
     print_step(f"Writing report: {report_path}")
     write_report(report_path, targets, initial_xml, hosts)
@@ -277,6 +301,62 @@ def run_followups(
             f"{host}:{port_text}/{protocol}",
         )
     print_section_done("Follow-up scans")
+
+
+def run_impacket_recon(
+    parsed: argparse.Namespace,
+    hosts: list[HostObservation],
+) -> None:
+    availability = ensure_impacket_package(parsed.max_impacket_output_chars)
+    if not availability.available:
+        print_section_done("Impacket recon", f"skipped: {availability.reason}")
+        return
+    if availability.version:
+        print_step(f"Impacket package imported: {availability.version}")
+    else:
+        print_step("Impacket package imported")
+
+    planned: list[tuple[ServiceObservation, str]] = []
+    seen: set[tuple[str, str, int, str]] = set()
+    for host in hosts:
+        for service in host.services:
+            for profile in match_profiles(service):
+                for module_name in modules_for_profile(profile):
+                    key = (
+                        service.host,
+                        service.protocol.lower(),
+                        service.port,
+                        module_name,
+                    )
+                    if key in seen or not module_supports_service(module_name, service):
+                        continue
+                    seen.add(key)
+                    planned.append((service, module_name))
+
+    if not planned:
+        print_section_done("Impacket recon", "no matching recon modules")
+        return
+
+    print_step(f"Impacket recon starting ({len(planned)} module run(s))")
+    for service, module_name in planned:
+        target = f"{service.host}:{service.port}/{service.protocol}"
+        print_step(f"Impacket {module_name} starting for {target}")
+        result = run_impacket_module(
+            module_name,
+            service,
+            parsed.max_impacket_output_chars,
+        )
+        if result.skipped:
+            print_step(f"Impacket {module_name} skipped for {target}: {result.reason}")
+            continue
+        if not result.ok:
+            print_step(f"Impacket {module_name} failed for {target}; continuing")
+            continue
+        if result.output:
+            service.scripts[f"impacket-{module_name}"] = result.output
+        print_section_done(f"Impacket {module_name}", target)
+
+    print_section_done("Impacket recon")
 
 
 def print_unmatched_service(service: ServiceObservation) -> None:

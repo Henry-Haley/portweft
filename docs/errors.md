@@ -16,6 +16,10 @@ stable exit code where possible.
 | Nmap XML cannot be parsed | Prints the XML path and parse/read error. |
 | Follow-up XML cannot be parsed | Prints the error and continues with the rest of the run. |
 | UDP companion scan fails | Prints Nmap's error and continues with TCP results. |
+| Impacket package missing | Attempts `python -m pip install "impacket>=0.11"`, then retries import. |
+| Impacket auto-install fails | Prints the bounded pip output and skips Impacket recon. |
+| Impacket recon tool missing | Prints a skip message and continues. |
+| Impacket recon module fails | Prints the module output/error and continues. |
 | Report cannot be written | Prints the report path and OS error. |
 
 ## Error Classes
@@ -60,3 +64,12 @@ Error: <parser or OS message>
 Follow-up XML parse failures do not stop the entire run. Initial XML parse
 failures do stop the run because there is no reliable service inventory to
 continue from.
+
+## Impacket Error Output
+
+Optional Impacket recon is best-effort. The Impacket package is imported only
+when `--impacket` is used. If it is missing, PortWeft attempts an automatic pip
+install and retries the import. Install failures, missing tools, and non-zero
+module exits do not stop the PortWeft run. Output is bounded before being
+printed or written to the report so a chatty module cannot consume unbounded
+memory.

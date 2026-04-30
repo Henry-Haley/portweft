@@ -13,6 +13,7 @@ CLI arguments
   -> XML parsing
   -> banner-first profile matching
   -> batched service-specific follow-up scans
+  -> optional allowlisted Impacket recon
   -> merged host/service observations
   -> terminal progress output
   -> text report
@@ -36,6 +37,11 @@ portweft/models.py
 portweft/nmap_runner.py
   Nmap command construction, passthrough validation, executable discovery,
   subprocess execution, and Nmap error extraction.
+
+portweft/impacket_runner.py
+  Optional lazy Impacket package import, pip auto-install, recon module
+  allowlist, executable discovery, bounded subprocess output capture, and
+  command construction.
 
 portweft/nmap_xml.py
   Streaming Nmap XML parsing, OS inference, bounded script-output extraction,
@@ -67,7 +73,8 @@ Matching prefers service evidence over ports:
 3. Extra service info
 4. TLS tunnel metadata
 5. NSE script names and script output
-6. TCP or UDP fallback ports
+6. Optional Impacket recon output
+7. TCP or UDP fallback ports
 
 This lets PortWeft catch common non-standard deployments, such as SSH on
 `2222`, HTTP on `9000`, or SMB/Samba on a non-standard TCP port.
@@ -79,8 +86,8 @@ a progress message and keeps the service in the final report.
 
 The initial TCP XML is parsed first. If the UDP companion scan succeeds, its XML
 is parsed and merged into the same host list. Follow-up scans then merge script
-output, updated product/version fields, and new services back into the existing
-host observations.
+output, optional Impacket recon output, updated product/version fields, and new
+services back into the existing host observations.
 
 The merge key for services is:
 

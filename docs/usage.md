@@ -7,8 +7,17 @@ runtime target.
 
 - Python 3.10+
 - Nmap available on `PATH`
+- Optional: Impacket for `--impacket` recon modules
 
-No Python packages are required for normal use.
+No Python packages are required for normal use. Impacket is only needed when
+optional Impacket recon is enabled. If it is missing, PortWeft attempts to
+install it automatically with pip before running Impacket recon.
+
+Manual install from the source tree:
+
+```bash
+python3 -m pip install ".[impacket]"
+```
 
 ## Run From The Source Tree
 
@@ -129,6 +138,39 @@ python3 -m portweft 192.0.2.10 -p 22,80,443 --dry-run -- -T4 -Pn
 
 Dry-run mode prints the exact Nmap commands that would be executed and does not
 write output files.
+
+## Optional Impacket Recon
+
+PortWeft can run allowlisted Impacket recon modules after matched Nmap
+follow-ups:
+
+```bash
+python3 -m portweft 192.0.2.10 --impacket
+```
+
+The current allowlist is limited to:
+
+```text
+samrdump, rpcdump
+```
+
+These modules only run for supported open TCP services in matching profiles,
+such as SMB and Microsoft RPC. PortWeft imports the Impacket Python package
+only when `--impacket` is used. If the package is missing, PortWeft runs:
+
+```bash
+python3 -m pip install "impacket>=0.11"
+```
+
+If pip installation fails, or if matching Impacket console tools are still
+missing afterward, PortWeft prints a skip message; they are not required for
+normal use.
+
+Limit retained Impacket output per module:
+
+```bash
+python3 -m portweft 192.0.2.10 --impacket --max-impacket-output-chars 4096
+```
 
 ## Output Retention
 

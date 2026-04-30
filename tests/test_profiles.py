@@ -15,6 +15,8 @@ class ProfileTests(unittest.TestCase):
                 self.assertIsInstance(profile.get("services"), set)
                 self.assertIsInstance(profile.get("banner_terms"), set)
                 self.assertIsInstance(profile.get("scripts"), list)
+                if "impacket" in profile:
+                    self.assertIsInstance(profile.get("impacket"), list)
 
     def test_web_common_alt_ports_are_present(self) -> None:
         for port in (80, 443, 8000, 8008, 8080, 8081, 8443, 8888, 9000, 9443):

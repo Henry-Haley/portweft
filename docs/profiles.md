@@ -23,6 +23,10 @@ banner_terms
 scripts
   Conservative NSE scripts used for follow-up. Empty means the follow-up scan
   omits `--script` and only gathers version/service data.
+
+impacket
+  Optional allowlisted Impacket recon modules used only when `--impacket` is
+  enabled. Empty or absent means no Impacket recon is attempted.
 ```
 
 ## Current Built-In Profiles
@@ -64,6 +68,20 @@ scripts
 | `syslog` | none | 514 | none |
 | `ssdp` | none | 1900 | none |
 
+## Optional Impacket Recon Modules
+
+Impacket modules are opt-in and limited to recon-only commands. They do not run
+unless the operator passes `--impacket`.
+
+| Profile | Modules | Supported Ports |
+| --- | --- | --- |
+| `smb` | `samrdump`, `rpcdump` | 139/tcp, 445/tcp |
+| `rpc` | `rpcdump` | 135/tcp, 139/tcp, 445/tcp, 593/tcp |
+
+PortWeft intentionally does not allowlist Impacket tools that exploit services,
+relay authentication, dump secrets, brute force identifiers, or attempt
+credential attacks.
+
 ## Adding A Profile
 
 Add a dictionary entry in `portweft/profiles.py`:
@@ -75,6 +93,7 @@ Add a dictionary entry in `portweft/profiles.py`:
     "services": {"example-service"},
     "banner_terms": {"example product", "exampled"},
     "scripts": [],
+    "impacket": [],
 }
 ```
 

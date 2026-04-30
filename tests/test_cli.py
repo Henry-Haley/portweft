@@ -34,6 +34,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 0)
         self.assertIn("usage: portweft", output)
         self.assertIn("--udp-ports", output)
+        self.assertIn("--impacket", output)
 
     def test_package_directory_invocation_prints_help(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]

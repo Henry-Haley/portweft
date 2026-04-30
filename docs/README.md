@@ -17,6 +17,7 @@ detail.
 ## Project Intent
 
 PortWeft is a lightweight Nmap XML orchestration tool for authorized service
-reconnaissance. It gathers service facts and organizes them. It does not
-identify vulnerabilities, check CVEs, brute force credentials, exploit
-services, or provide attack recommendations.
+reconnaissance. It gathers service facts and organizes them. Optional Impacket
+support is limited to allowlisted recon modules. PortWeft does not identify
+vulnerabilities, check CVEs, brute force credentials, exploit services, or
+provide attack recommendations.

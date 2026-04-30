@@ -26,7 +26,10 @@ class ReportingTests(unittest.TestCase):
                     service_name="unknown",
                     product="OpenSSH",
                     version="9.6",
-                    scripts={"ssh-hostkey": "fingerprint"},
+                    scripts={
+                        "ssh-hostkey": "fingerprint",
+                        "impacket-samrdump": "SAMR users observed",
+                    },
                 )
             ],
         )
@@ -48,6 +51,8 @@ class ReportingTests(unittest.TestCase):
         self.assertIn("2222/tcp unknown OpenSSH 9.6 [profiles: ssh]", report)
         self.assertIn("ssh-hostkey:", report)
         self.assertIn("fingerprint", report)
+        self.assertIn("impacket-samrdump:", report)
+        self.assertIn("SAMR users observed", report)
 
 
 if __name__ == "__main__":
