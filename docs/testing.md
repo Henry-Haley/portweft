@@ -17,7 +17,14 @@ Windows with an explicit interpreter path:
 ## Compile Check
 
 ```bash
-python3 -m compileall portweft.py portweft tests
+python3 -m compileall -q portweft.py portweft tests/*.py
+```
+
+Windows PowerShell:
+
+```powershell
+$testFiles = Get-ChildItem tests -File -Filter *.py
+& 'C:\Users\henry\AppData\Local\Python\bin\python.exe' -m compileall -q portweft.py portweft @($testFiles.FullName)
 ```
 
 ## Install Smoke Test
@@ -51,6 +58,9 @@ tests/test_nmap_runner.py
   Nmap argument parsing, command construction, banner script handling,
   subprocess error handling.
 
+tests/test_integration_scanner.py
+  Optional localhost listener detection. Skips when Nmap is not available.
+
 tests/test_impacket_runner.py
   Optional Impacket recon command construction, allowlist support, skipped
   tools, bounded output, and CLI result attachment.
@@ -80,7 +90,9 @@ Fixtures are small and purpose-built:
 - Non-standard ports for banner-first matching.
 - Empty XML.
 
-The suite does not require live network scanning.
+The core suite does not require external network scanning. The optional
+integration test binds a local listener on loopback and skips itself when Nmap
+is not available.
 
 ## Temporary Files
 
@@ -93,7 +105,7 @@ Run:
 
 ```bash
 python3 -m unittest discover -v
-python3 -m compileall portweft.py portweft tests
+python3 -m compileall -q portweft.py portweft tests/*.py
 git diff --check
 ```
 

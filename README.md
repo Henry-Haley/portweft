@@ -335,8 +335,9 @@ PortWeft uses the Python standard library `unittest` runner:
 python3 -m unittest discover -v
 ```
 
-The test suite uses local XML fixtures and mocks for command failures, so it
-does not require live network scanning.
+The test suite uses local XML fixtures and mocks for command failures. It also
+includes an optional localhost listener integration test that skips itself when
+Nmap is not available.
 
 ## Matching Behavior
 

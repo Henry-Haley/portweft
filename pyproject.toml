@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "portweft"
-version = "1.0.0"
+version = "1.0"
 description = "Lightweight Nmap XML orchestration for service facts."
 readme = "README.md"
 requires-python = ">=3.10"

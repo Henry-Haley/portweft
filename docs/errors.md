@@ -37,6 +37,7 @@ NmapNotFoundError
 NmapArgumentStringError
 NmapOutputConflictError
 NmapPassthroughError
+PortSpecError
 ImpacketUnavailableError
 TargetResolutionError
 OutputDirectoryError
