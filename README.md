@@ -2,7 +2,7 @@
 
 PortWeft is a lightweight Nmap orchestration and XML parsing tool for authorized
 service reconnaissance. It takes one or more targets, runs an initial Nmap scan,
-stores the XML output, parses open services, and then runs conservative
+uses temporary XML output, parses open services, and then runs conservative
 service-specific follow-up scans for useful facts such as versions, banners,
 headers, protocol metadata, and basic service details.
 
@@ -109,7 +109,7 @@ portweft/
     evidence are preferred; port numbers are fallback hints.
 
   reporting.py
-    Writes the final text report.
+    Writes per-host and cumulative text reports.
 
   utils.py
     Progress printing, command display, safe filenames, and formatting helpers.
@@ -229,19 +229,24 @@ PortWeft writes run output under:
 
 ```text
 output/
-  scans/
   reports/
+    <run-start-gmt>/
+      CUMULATIVE-report.txt
+      <host>-report.txt
 ```
 
-The initial Nmap XML is preserved, follow-up scan XML files are stored by
-host/protocol/profile, and a text report summarizes the collected service
-facts. Dry-run mode only prints planned commands and does not write files.
+Nmap XML files are timestamped with the GMT scan start time while the run is in
+progress, then removed after the consolidated reports are written. Each
+responding host gets its own `<host>-report.txt`; hosts with no observed
+response do not get a report. `CUMULATIVE-report.txt` includes every responding
+host from the run. Dry-run mode only prints planned commands and does not write
+files.
 
 The terminal also prints progress while the run is happening. Examples of the
 screen output include:
 
 ```text
-Initial Nmap scan complete: XML saved to output/scans/<run>/initial.xml
+Initial Nmap scan complete: XML saved to output/scans/<run>/<run>-initial.xml
 Initial XML parse complete
 OS identified: 192.0.2.10 -> Linux 5.4 - 5.15 (93% accuracy)
 Open ports for 192.0.2.10:
@@ -249,7 +254,7 @@ Open ports for 192.0.2.10:
   443/tcp https nginx 1.24.0
 Follow-up profile web complete: 192.0.2.10:443/tcp
 Impacket samrdump complete: 192.0.2.11:445/tcp
-Report writing complete: output/reports/<run>.txt
+Report writing complete: 3 file(s) in output/reports/<run>
 ```
 
 ## Testing

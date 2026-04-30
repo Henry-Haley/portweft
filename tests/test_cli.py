@@ -7,7 +7,7 @@ import sys
 import unittest
 from pathlib import Path
 
-from portweft.cli import main, print_unmatched_service, prune_old_runs
+from portweft.cli import cleanup_scan_outputs, main, print_unmatched_service, prune_old_runs
 from portweft.models import ServiceObservation
 from tests.helpers import temporary_directory
 
@@ -155,6 +155,40 @@ class CliTests(unittest.TestCase):
             self.assertFalse((report_root / "20260101-000000Z.txt").exists())
             self.assertTrue((scan_root / "20260102-000000Z").exists())
             self.assertTrue((report_root / "20260102-000000Z.txt").exists())
+
+    def test_prune_old_runs_keeps_newest_report_directory(self) -> None:
+        with temporary_directory() as temp_dir:
+            output_root = Path(temp_dir)
+            report_root = output_root / "reports"
+            report_root.mkdir()
+            for run_id in ("20260101-000000Z", "20260102-000000Z"):
+                run_report_dir = report_root / run_id
+                run_report_dir.mkdir()
+                (run_report_dir / "CUMULATIVE-report.txt").write_text(
+                    "report",
+                    encoding="utf-8",
+                )
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                prune_old_runs(output_root, keep_runs=1)
+
+            self.assertFalse((report_root / "20260101-000000Z").exists())
+            self.assertTrue((report_root / "20260102-000000Z").exists())
+
+    def test_cleanup_scan_outputs_removes_temporary_xml_directory(self) -> None:
+        with temporary_directory() as temp_dir:
+            scan_root = Path(temp_dir) / "scans"
+            scan_dir = scan_root / "20260429-201530-000000Z"
+            scan_dir.mkdir(parents=True)
+            (scan_dir / "20260429-201530-000000Z-initial.xml").write_text(
+                "<nmaprun />",
+                encoding="utf-8",
+            )
+
+            cleanup_scan_outputs(scan_dir)
+
+            self.assertFalse(scan_dir.exists())
+            self.assertFalse(scan_root.exists())
 
 
 if __name__ == "__main__":

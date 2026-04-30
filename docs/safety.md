@@ -6,12 +6,12 @@ fact collection.
 ## What PortWeft Does
 
 - Runs Nmap scans.
-- Saves Nmap XML.
+- Uses temporary Nmap XML for parsing.
 - Parses open services, banners, versions, and script output.
 - Matches services to low-noise follow-up profiles.
 - Optionally runs allowlisted Impacket recon modules when `--impacket` is set.
 - Prints progress to screen.
-- Writes a text report.
+- Writes per-host and cumulative text reports.
 
 ## What PortWeft Does Not Do
 

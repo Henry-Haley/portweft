@@ -214,14 +214,15 @@ Run files are written under:
 
 ```text
 output/
-  scans/
-    <run-id>/
-      initial.xml
-      udp.xml
-      <host>_<protocol>_<profile>.xml
   reports/
-    <run-id>.txt
+    <run-start-gmt>/
+      CUMULATIVE-report.txt
+      <host>-report.txt
 ```
 
-The terminal prints progress while the run is happening. The report is a text
-summary of the parsed service facts.
+Nmap XML files are temporary working files under `output/scans/<run-start-gmt>/`
+while the run is active. Their names include the GMT scan start timestamp, and
+PortWeft removes them after the final reports are written. Each responding host
+gets one report named after the host address, and `CUMULATIVE-report.txt`
+contains all responding hosts from the run. The report keeps Nmap open-port and
+NSE output separate from the `IMPACKET RESULTS:` section.

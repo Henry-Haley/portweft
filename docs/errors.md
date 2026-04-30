@@ -57,7 +57,7 @@ Error: See the output of nmap -h for a summary of options.
 Malformed or unreadable XML is wrapped as:
 
 ```text
-Error: Could not parse Nmap XML: output/scans/<run>/initial.xml
+Error: Could not parse Nmap XML: output/scans/<run>/<run>-initial.xml
 Error: <parser or OS message>
 ```
 

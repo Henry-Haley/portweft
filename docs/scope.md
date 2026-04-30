@@ -5,7 +5,7 @@ This document defines the intended scope for the first usable PortWeft release.
 ## In Scope
 
 - Run Nmap against one or more user-provided targets.
-- Save Nmap XML output.
+- Use temporary Nmap XML output for parsing.
 - Parse hosts, open services, versions, banners, script output, and rough OS
   hints.
 - Prefer banner/service evidence over port numbers when matching profiles.
@@ -15,7 +15,7 @@ This document defines the intended scope for the first usable PortWeft release.
   services.
 - Run a small UDP companion scan by default.
 - Print progress to screen.
-- Write a plain text report.
+- Write per-host and cumulative plain text reports.
 - Support Linux, macOS, and Windows.
 - Use only the Python standard library plus Nmap for normal operation.
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
+import datetime as dt
 import shutil
 import sys
 from pathlib import Path
@@ -35,9 +36,8 @@ from portweft.nmap_xml import (
     merge_hosts,
     parse_nmap_xml,
 )
-from portweft.reporting import write_report
+from portweft.reporting import write_reports
 from portweft.utils import (
-    now_slug,
     print_followup_findings,
     print_host_os,
     print_open_services,
@@ -157,16 +157,18 @@ def run(argv: list[str] | None = None) -> int:
     if not targets:
         parser.error("At least one target is required.")
 
-    run_id = now_slug()
+    scan_started_at = dt.datetime.now(dt.timezone.utc)
+    run_id = scan_started_at.strftime("%Y%m%d-%H%M%S-%fZ")
     output_root = Path(parsed.output_dir)
     scan_dir = output_root / "scans" / run_id
-    report_dir = output_root / "reports"
+    report_dir = output_root / "reports" / run_id
 
-    initial_xml = scan_dir / "initial.xml"
-    udp_xml = scan_dir / "udp.xml"
-    report_path = report_dir / f"{run_id}.txt"
+    initial_xml = scan_dir / f"{run_id}-initial.xml"
+    udp_xml = scan_dir / f"{run_id}-udp.xml"
+    xml_paths = [initial_xml]
 
     print_step(f"{APP_NAME} run {run_id} starting")
+    print_step(f"Scan started (GMT): {scan_started_at.strftime('%Y-%m-%d %H:%M:%S GMT')}")
     print_step(f"Targets: {', '.join(targets)}")
 
     if not parsed.dry_run:
@@ -184,6 +186,7 @@ def run(argv: list[str] | None = None) -> int:
         print_section_done("UDP companion scan", "skipped by --no-udp")
     else:
         udp_command = build_udp_command(parsed, targets, udp_xml, extra_nmap_args)
+        xml_paths.append(udp_xml)
         print_step("UDP companion scan starting")
         udp_result = run_command(udp_command, parsed.dry_run)
         if udp_result.ok:
@@ -221,13 +224,22 @@ def run(argv: list[str] | None = None) -> int:
         if parsed.impacket:
             print_section_done("Impacket recon", "skipped by --no-follow-up")
     else:
-        run_followups(parsed, extra_nmap_args, scan_dir, hosts, open_services)
+        xml_paths.extend(
+            run_followups(parsed, extra_nmap_args, scan_dir, hosts, open_services)
+        )
         if parsed.impacket:
             run_impacket_recon(parsed, hosts)
 
-    print_step(f"Writing report: {report_path}")
-    write_report(report_path, targets, initial_xml, hosts)
-    print_section_done("Report writing", str(report_path))
+    print_step(f"Writing reports: {report_dir}")
+    written_reports = write_reports(
+        report_dir,
+        targets,
+        scan_started_at,
+        xml_paths,
+        hosts,
+    )
+    print_section_done("Report writing", f"{len(written_reports)} file(s) in {report_dir}")
+    cleanup_scan_outputs(scan_dir)
     prune_old_runs(output_root, parsed.keep_runs)
     print_section_done(f"{APP_NAME} run")
     return 0
@@ -239,6 +251,18 @@ def prepare_output_dirs(scan_dir: Path, report_dir: Path) -> None:
         report_dir.mkdir(parents=True, exist_ok=True)
     except OSError as error:
         raise OutputDirectoryError(str(scan_dir.parent.parent), str(error)) from error
+
+
+def cleanup_scan_outputs(scan_dir: Path) -> None:
+    """Remove temporary XML working files after consolidated reports are written."""
+    try:
+        if scan_dir.exists():
+            shutil.rmtree(scan_dir)
+        scan_root = scan_dir.parent
+        if scan_root.exists() and not any(scan_root.iterdir()):
+            scan_root.rmdir()
+    except OSError as error:
+        raise OutputDirectoryError(str(scan_dir), str(error)) from error
 
 
 def announce_host_findings(hosts: list[HostObservation]) -> None:
@@ -253,7 +277,8 @@ def run_followups(
     scan_dir: Path,
     hosts: list[HostObservation],
     open_services: list[ServiceObservation],
-) -> None:
+) -> list[Path]:
+    xml_paths: list[Path] = []
     groups: dict[tuple[str, str, str], list[ServiceObservation]] = defaultdict(list)
     for service in open_services:
         profiles = match_profiles(service)
@@ -267,7 +292,9 @@ def run_followups(
         services = groups[(host, protocol, profile)]
         ports = sorted({service.port for service in services})
         port_text = ",".join(str(port) for port in ports)
-        followup_xml = scan_dir / f"{safe_name(host)}_{protocol}_{profile}.xml"
+        run_id = scan_dir.name
+        followup_xml = scan_dir / f"{run_id}-{safe_name(host)}-{protocol}-{profile}.xml"
+        xml_paths.append(followup_xml)
         print_step(f"Follow-up profile {profile} starting for {host}:{port_text}/{protocol}")
         command = build_followup_batch_command(
             parsed,
@@ -301,6 +328,7 @@ def run_followups(
             f"{host}:{port_text}/{protocol}",
         )
     print_section_done("Follow-up scans")
+    return xml_paths
 
 
 def run_impacket_recon(
@@ -392,16 +420,24 @@ def prune_old_runs(output_root: Path, keep_runs: int) -> None:
     if scan_root.exists():
         run_ids.update(path.name for path in scan_root.iterdir() if path.is_dir())
     if report_root.exists():
-        run_ids.update(path.stem for path in report_root.glob("*.txt"))
+        for path in report_root.iterdir():
+            if path.is_dir():
+                run_ids.add(path.name)
+            elif path.suffix == ".txt":
+                run_ids.add(path.stem)
 
     stale_run_ids = sorted(run_ids, reverse=True)[keep_runs:]
     removed = 0
     for run_id in stale_run_ids:
         scan_path = scan_root / run_id
+        report_dir = report_root / run_id
         report_path = report_root / f"{run_id}.txt"
         try:
             if scan_path.exists():
                 shutil.rmtree(scan_path)
+                removed += 1
+            if report_dir.exists():
+                shutil.rmtree(report_dir)
                 removed += 1
             if report_path.exists():
                 report_path.unlink()

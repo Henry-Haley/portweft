@@ -16,7 +16,8 @@ CLI arguments
   -> optional allowlisted Impacket recon
   -> merged host/service observations
   -> terminal progress output
-  -> text report
+  -> per-host and cumulative text reports
+  -> temporary XML cleanup
 ```
 
 ## Modules
@@ -55,13 +56,13 @@ portweft/matcher.py
   Banner-first service-to-profile matching.
 
 portweft/reporting.py
-  Streaming text report generation.
+  Streaming per-host and cumulative text report generation.
 
 portweft/errors.py
   Expected runtime exceptions with stable exit codes.
 
 portweft/utils.py
-  Console printing, command display, run IDs, and formatting helpers.
+  Console printing, command display, safe filenames, and formatting helpers.
 ```
 
 ## Matching Model
