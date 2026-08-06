@@ -72,6 +72,33 @@ BANNER_SCRIPT = "banner"
 MAX_PORT = 65535
 COMMAND_TIMEOUT_EXIT_CODE = 124
 
+DISCOVERY_INCOMPATIBLE_FLAGS = {
+    "-A",
+    "-F",
+    "-O",
+    "-sC",
+    "-sL",
+    "-sn",
+    "-sO",
+    "-sU",
+    "-sV",
+    "--allports",
+    "--script-trace",
+    "--script-updatedb",
+    "--version-all",
+    "--version-light",
+    "--version-trace",
+    "--traceroute",
+}
+DISCOVERY_INCOMPATIBLE_OPTIONS_WITH_VALUES = {
+    "--script",
+    "--script-args",
+    "--script-args-file",
+    "--script-help",
+    "--version-intensity",
+    "--versiondb",
+}
+
 NMAP_INTEGER_OPTIONS = {
     "--max-hostgroup": (1, None),
     "--max-parallelism": (1, None),
@@ -297,6 +324,54 @@ def build_initial_command(
     command.extend(["-oX", str(xml_path)])
     command.extend(targets)
     return command
+
+
+def build_discovery_command(
+    parsed: argparse.Namespace,
+    targets: list[str],
+    xml_path: Path,
+    extra: list[str],
+) -> list[str]:
+    return [resolved_nmap_path(parsed.nmap_path), *filter_discovery_nmap_args(extra), "-p-", "-oX", str(xml_path), *targets]
+
+
+def build_detailed_command(
+    parsed: argparse.Namespace,
+    host: str,
+    ports: list[int],
+    xml_path: Path,
+    extra: list[str],
+) -> list[str]:
+    detailed_args = with_nse_script(
+        [arg for arg in extra if arg != "-A"],
+        BANNER_SCRIPT,
+    )
+    detailed_args = build_base_nmap_args(parsed, detailed_args)
+    if not parsed.no_service_version and "-sV" not in detailed_args:
+        detailed_args.append("-sV")
+    port_text = ",".join(str(port) for port in sorted(set(ports)))
+    return [resolved_nmap_path(parsed.nmap_path), *detailed_args, "-p", port_text, "-oX", str(xml_path), host]
+
+
+def filter_discovery_nmap_args(args: list[str]) -> list[str]:
+    filtered: list[str] = []
+    skip_next = False
+    for arg in args:
+        if skip_next:
+            skip_next = False
+            continue
+        if arg in DISCOVERY_INCOMPATIBLE_FLAGS:
+            continue
+        if arg in DISCOVERY_INCOMPATIBLE_OPTIONS_WITH_VALUES:
+            skip_next = True
+            continue
+        if any(
+            arg.startswith(f"{option}=")
+            for option in DISCOVERY_INCOMPATIBLE_OPTIONS_WITH_VALUES
+        ):
+            continue
+        filtered.append(arg)
+    return filtered
 
 
 def nmap_port_args(ports: str) -> list[str]:

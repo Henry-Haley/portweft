@@ -118,6 +118,22 @@ The initial TCP scan automatically includes Nmap service detection and the
 low-noise NSE `banner` script. If you pass your own `--script` expression,
 PortWeft adds `banner` to it instead of replacing it.
 
+## All-Port Discovery
+
+Discover open TCP ports across the full port range, then run service detection
+separately for only the ports found on each host:
+
+```bash
+python3 -m portweft 192.0.2.10 --discovery
+```
+
+The discovery pass omits service detection, `-A`, and NSE. By default, each
+responding host with open TCP ports then gets its own explicit
+`-sV --version-light` and `banner` scan before the normal profile follow-ups.
+Hosts with no open ports or a failed detailed scan do not stop other hosts. UDP
+companion scanning is unchanged. `--discovery` cannot be combined with
+`-p/--ports` or `--top-ports`.
+
 ## Nmap Passthrough
 
 PortWeft accepts raw Nmap options after its own arguments:

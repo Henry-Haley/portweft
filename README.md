@@ -33,6 +33,7 @@ PortWeft is built around:
 - Accepts IPs, domains, comma-separated targets, and CIDRs
 - Resolves domains before scanning
 - Runs Nmap and parses XML automatically
+- Optionally discovers all open TCP ports before per-host service enumeration
 - Performs targeted follow-up scans per service
 - Produces clean text or JSON reports
 - Optionally runs allowlisted Impacket recon for SMB/RPC
@@ -75,6 +76,12 @@ Dry run:
 
 ```bash
 python3 -m portweft 192.0.2.10 --dry-run
+```
+
+All-port TCP discovery followed by targeted service enumeration:
+
+```bash
+python3 -m portweft 192.0.2.10 --discovery
 ```
 
 ## Requirements

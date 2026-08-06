@@ -72,6 +72,39 @@ class NmapXmlTests(unittest.TestCase):
 
         self.assertEqual(hosts[0].services[0].scripts["big"], "abcdefghij")
 
+    def test_open_tcp_ports_remain_separate_for_each_host(self) -> None:
+        with temporary_directory() as temp_dir:
+            path = Path(temp_dir) / "discovery.xml"
+            path.write_text(
+                """
+                <nmaprun>
+                  <host>
+                    <status state="up"/>
+                    <address addr="192.0.2.10" addrtype="ipv4"/>
+                    <ports>
+                      <port protocol="tcp" portid="22"><state state="open"/></port>
+                      <port protocol="tcp" portid="80"><state state="closed"/></port>
+                    </ports>
+                  </host>
+                  <host>
+                    <status state="up"/>
+                    <address addr="192.0.2.11" addrtype="ipv4"/>
+                    <ports>
+                      <port protocol="tcp" portid="443"><state state="open"/></port>
+                    </ports>
+                  </host>
+                </nmaprun>
+                """,
+                encoding="utf-8",
+            )
+
+            hosts = parse_nmap_xml(path)
+
+        self.assertEqual(
+            {host.address: [service.port for service in host.services] for host in hosts},
+            {"192.0.2.10": [22], "192.0.2.11": [443]},
+        )
+
     def test_malformed_xml_raises_parse_error(self) -> None:
         with temporary_directory() as temp_dir:
             path = Path(temp_dir) / "bad.xml"

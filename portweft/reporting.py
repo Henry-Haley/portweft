@@ -27,6 +27,7 @@ def write_reports(
     scan_started_at: dt.datetime,
     hosts: list[HostObservation],
     impacket_status: str = "not requested (--impacket not used)",
+    discovery_mode: bool = False,
 ) -> list[Path]:
     """Write one cumulative report and one report for each responding host."""
     report_hosts = reportable_hosts(hosts)
@@ -39,7 +40,9 @@ def write_reports(
     cumulative_path = report_dir / CUMULATIVE_REPORT_NAME
     write_lines(
         cumulative_path,
-        report_lines(targets, scan_started_at, report_hosts, impacket_status),
+        report_lines(
+            targets, scan_started_at, report_hosts, impacket_status, discovery_mode
+        ),
     )
     written.append(cumulative_path)
 
@@ -47,7 +50,9 @@ def write_reports(
         host_path = report_dir / host_report_filename(host)
         write_lines(
             host_path,
-            report_lines(targets, scan_started_at, [host], impacket_status),
+            report_lines(
+                targets, scan_started_at, [host], impacket_status, discovery_mode
+            ),
         )
         written.append(host_path)
 
@@ -60,6 +65,7 @@ def write_json_reports(
     scan_started_at: dt.datetime,
     hosts: list[HostObservation],
     impacket_status: str = "not requested (--impacket not used)",
+    discovery_mode: bool = False,
 ) -> list[Path]:
     """Write parseable JSON reports instead of formatted text reports."""
     report_hosts = reportable_hosts(hosts)
@@ -84,6 +90,7 @@ def write_json_reports(
             scan_started_at=scan_started_at,
             hosts=report_hosts,
             impacket_status=impacket_status,
+            discovery_mode=discovery_mode,
         ),
     )
     written.append(cumulative_path)
@@ -99,6 +106,7 @@ def write_json_reports(
                 scan_started_at=scan_started_at,
                 hosts=[host],
                 impacket_status=impacket_status,
+                discovery_mode=discovery_mode,
             ),
         )
         written.append(host_path)
@@ -113,6 +121,7 @@ def write_report(
     hosts: list[HostObservation],
     scan_started_at: dt.datetime | None = None,
     impacket_status: str = "not requested (--impacket not used)",
+    discovery_mode: bool = False,
 ) -> None:
     """Write a single report file.
 
@@ -123,7 +132,9 @@ def write_report(
     started_at = scan_started_at or dt.datetime.now(dt.timezone.utc)
     write_lines(
         report_path,
-        report_lines(targets, started_at, reportable_hosts(hosts), impacket_status),
+        report_lines(
+            targets, started_at, reportable_hosts(hosts), impacket_status, discovery_mode
+        ),
     )
 
 
@@ -150,11 +161,14 @@ def report_lines(
     scan_started_at: dt.datetime,
     hosts: list[HostObservation],
     impacket_status: str,
+    discovery_mode: bool = False,
 ) -> Iterator[str]:
     yield f"{APP_NAME} Report"
     yield f"Scan started (GMT): {format_gmt(scan_started_at)}"
     yield f"Generated (GMT): {format_gmt(dt.datetime.now(dt.timezone.utc))}"
     yield f"Operator OS: {platform.system()} {platform.release()}"
+    if discovery_mode:
+        yield "Scan mode: discovery"
     yield f"Targets: {', '.join(targets)}"
     yield "Temporary XML: removed after parsing and report generation"
     yield ""
@@ -254,6 +268,7 @@ def json_report_document(
     scan_started_at: dt.datetime,
     hosts: list[HostObservation],
     impacket_status: str,
+    discovery_mode: bool = False,
 ) -> dict:
     return {
         "target": target,
@@ -261,6 +276,7 @@ def json_report_document(
         "targets": [target_resolution_json(resolution) for resolution in resolutions],
         "scan_started_gmt": format_gmt(scan_started_at),
         "generated_gmt": format_gmt(dt.datetime.now(dt.timezone.utc)),
+        **({"scan_mode": "discovery"} if discovery_mode else {}),
         "impacket_status": impacket_status,
         "hosts": [host_json(host) for host in hosts],
     }

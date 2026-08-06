@@ -50,6 +50,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("P O R T W E F T", output)
         self.assertIn("--udp-ports", output)
         self.assertIn("--impacket", output)
+        self.assertIn("--discovery", output)
 
     def test_keyboard_interrupt_returns_standard_interrupt_exit_code(self) -> None:
         stderr = io.StringIO()
@@ -374,6 +375,52 @@ class CliTests(unittest.TestCase):
         self.assertIn("Use either -p/--ports or --top-ports", stderr.getvalue())
         run_command.assert_not_called()
 
+    def test_discovery_rejects_explicit_ports_and_top_ports(self) -> None:
+        for port_args in (("-p", "80"), ("--top-ports", "10")):
+            with self.subTest(port_args=port_args):
+                stderr = io.StringIO()
+                with patch("portweft.cli.run_command") as run_command:
+                    with contextlib.redirect_stderr(stderr):
+                        with self.assertRaises(SystemExit) as raised:
+                            main(
+                                [
+                                    "127.0.0.1",
+                                    "--discovery",
+                                    *port_args,
+                                    "--dry-run",
+                                ]
+                            )
+
+                self.assertEqual(raised.exception.code, 2)
+                self.assertIn(
+                    "Use --discovery without -p/--ports or --top-ports",
+                    stderr.getvalue(),
+                )
+                run_command.assert_not_called()
+
+    def test_discovery_rejects_raw_nmap_port_selection(self) -> None:
+        stderr = io.StringIO()
+        with patch("portweft.cli.run_command") as run_command:
+            with contextlib.redirect_stderr(stderr):
+                with self.assertRaises(SystemExit) as raised:
+                    main(
+                        [
+                            "127.0.0.1",
+                            "--discovery",
+                            "--dry-run",
+                            "--",
+                            "-p",
+                            "80",
+                        ]
+                    )
+
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn(
+            "Use --discovery without -p/--ports or --top-ports",
+            stderr.getvalue(),
+        )
+        run_command.assert_not_called()
+
     def test_no_udp_and_udp_ports_conflict_exit_before_scan(self) -> None:
         with temporary_directory() as temp_dir:
             stderr = io.StringIO()
@@ -504,6 +551,107 @@ class CliTests(unittest.TestCase):
             self.assertIn("UDP companion scan complete: skipped by --no-udp", output)
             self.assertNotIn("-sU", output)
 
+    def test_discovery_dry_run_keeps_udp_companion_behavior(self) -> None:
+        with temporary_directory() as temp_dir:
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                exit_code = main(
+                    [
+                        "127.0.0.1",
+                        "--discovery",
+                        "--dry-run",
+                        "--output-dir",
+                        temp_dir,
+                    ]
+                )
+
+        output = stdout.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertIn("TCP discovery scan starting", output)
+        self.assertIn("-p-", output)
+        self.assertIn("UDP companion scan starting", output)
+        self.assertIn("-sU -p U:", output)
+        self.assertIn("planned per host after discovery results", output)
+
+    def test_discovery_enumerates_each_host_and_continues_after_failure(self) -> None:
+        def host(address: str, *ports: int) -> HostObservation:
+            return HostObservation(
+                address=address,
+                status="up",
+                services=[
+                    ServiceObservation(address, port, "tcp", "open") for port in ports
+                ],
+            )
+
+        failed_host = host("192.0.2.10", 22)
+        successful_host = host("192.0.2.11", 8443, 443)
+        no_ports_host = host("192.0.2.12")
+        detailed_host = host("192.0.2.11", 443, 8443)
+        detailed_host.services[0].service_name = "https"
+        detailed_host.services[0].product = "nginx"
+        detailed_host.services[1].service_name = "https-alt"
+        ok = SimpleNamespace(ok=True, exit_code=0)
+        failed = SimpleNamespace(ok=False, exit_code=1)
+
+        with temporary_directory() as temp_dir:
+            stdout = io.StringIO()
+            with patch("portweft.cli.ensure_nmap_available"):
+                with patch(
+                    "portweft.cli.run_command",
+                    side_effect=[ok, failed, ok],
+                ) as run_command:
+                    with patch(
+                        "portweft.cli.parse_nmap_xml",
+                        side_effect=[
+                            [failed_host, successful_host, no_ports_host],
+                            [detailed_host],
+                        ],
+                    ):
+                        with patch("portweft.cli.run_followups") as run_followups:
+                            with contextlib.redirect_stdout(stdout):
+                                exit_code = main(
+                                    [
+                                        "192.0.2.10,192.0.2.11,192.0.2.12",
+                                        "--discovery",
+                                        "--no-udp",
+                                        "--json",
+                                        "--scan-timeout",
+                                        "7",
+                                        "--output-dir",
+                                        temp_dir,
+                                    ]
+                                )
+
+            commands = [call.args[0] for call in run_command.call_args_list]
+            cumulative_path = next(
+                (Path(temp_dir) / "reports").glob("*/CUMULATIVE-report.json")
+            )
+            cumulative = json.loads(cumulative_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(len(commands), 3)
+        self.assertIn("-p-", commands[0])
+        self.assertNotIn("-sV", commands[0])
+        self.assertNotIn("--script", commands[0])
+        self.assertEqual(commands[1][commands[1].index("-p") + 1], "22")
+        self.assertEqual(commands[1][-1], "192.0.2.10")
+        self.assertEqual(commands[2][commands[2].index("-p") + 1], "443,8443")
+        self.assertEqual(commands[2][-1], "192.0.2.11")
+        self.assertTrue(
+            all(call.kwargs["timeout_seconds"] == 7.0 for call in run_command.call_args_list)
+        )
+        self.assertIn("continuing with other hosts", stdout.getvalue())
+        self.assertIn("no open TCP ports", stdout.getvalue())
+        self.assertEqual(cumulative["scan_mode"], "discovery")
+        by_address = {host["address"]: host for host in cumulative["hosts"]}
+        self.assertEqual(by_address["192.0.2.10"]["services"][0]["port"], 22)
+        self.assertEqual(
+            by_address["192.0.2.11"]["services"][0]["product"],
+            "nginx",
+        )
+        self.assertEqual(by_address["192.0.2.12"]["services"], [])
+        run_followups.assert_called_once()
+
     def test_impacket_missing_exits_before_scan(self) -> None:
         with temporary_directory() as temp_dir:
             stderr = io.StringIO()
@@ -583,6 +731,7 @@ class CliTests(unittest.TestCase):
             cumulative["impacket_status"],
             "not requested (--impacket not used)",
         )
+        self.assertNotIn("scan_mode", cumulative)
 
     def test_cleanup_failure_after_reports_does_not_fail_completed_scan(self) -> None:
         host = HostObservation(address="192.0.2.10", status="up")

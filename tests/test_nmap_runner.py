@@ -18,6 +18,8 @@ from portweft.errors import (
 )
 from portweft.models import ServiceObservation
 from portweft.nmap_runner import (
+    build_detailed_command,
+    build_discovery_command,
     build_followup_batch_command,
     build_followup_command,
     build_initial_command,
@@ -174,6 +176,68 @@ class NmapRunnerTests(unittest.TestCase):
 
         script_index = command.index("--script")
         self.assertEqual(command[script_index + 1], "http-title,banner")
+
+    def test_build_discovery_command_is_lightweight_and_scans_all_tcp_ports(self) -> None:
+        command = build_discovery_command(
+            parsed_args(),
+            ["192.0.2.10", "192.0.2.11"],
+            Path("discovery.xml"),
+            [
+                "-T4",
+                "-Pn",
+                "-A",
+                "-O",
+                "-sU",
+                "-sV",
+                "-sC",
+                "--script",
+                "http-title",
+                "--script-args=unsafe=0",
+                "--version-intensity",
+                "9",
+            ],
+        )
+
+        self.assertEqual(
+            command,
+            [
+                "nmap-test",
+                "-T4",
+                "-Pn",
+                "-p-",
+                "-oX",
+                "discovery.xml",
+                "192.0.2.10",
+                "192.0.2.11",
+            ],
+        )
+
+    def test_build_detailed_command_targets_only_discovered_host_ports(self) -> None:
+        command = build_detailed_command(
+            parsed_args(),
+            "192.0.2.10",
+            [443, 22, 443],
+            Path("detailed.xml"),
+            ["-T4", "-A"],
+        )
+
+        self.assertEqual(
+            command,
+            [
+                "nmap-test",
+                "-T4",
+                "--script",
+                "banner",
+                "-sV",
+                "--version-light",
+                "-p",
+                "22,443",
+                "-oX",
+                "detailed.xml",
+                "192.0.2.10",
+            ],
+        )
+        self.assertNotIn("-A", command)
 
     def test_build_followup_command_uses_profile_scripts(self) -> None:
         service = ServiceObservation(

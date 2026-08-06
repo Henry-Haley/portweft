@@ -55,6 +55,7 @@ class ReportingTests(unittest.TestCase):
             report = report_path.read_text(encoding="utf-8")
 
         self.assertIn("PortWeft Report", report)
+        self.assertNotIn("Scan mode:", report)
         self.assertIn("192.0.2.10 (linux.example)", report)
         self.assertIn("Linux 5.4 - 5.15 (93% accuracy)", report)
         self.assertIn("2222/tcp unknown OpenSSH 9.6 [profiles: ssh]", report)
@@ -102,6 +103,7 @@ class ReportingTests(unittest.TestCase):
                 scan_started_at,
                 [responding_host, no_ports_host, silent_host],
                 "not requested (--impacket not used)",
+                discovery_mode=True,
             )
 
             cumulative_path = report_dir / CUMULATIVE_REPORT_NAME
@@ -121,6 +123,7 @@ class ReportingTests(unittest.TestCase):
         self.assertTrue(no_ports_exists)
         self.assertFalse(silent_exists)
         self.assertIn("Scan started (GMT): 2026-04-29 20:15:30 GMT", host_report)
+        self.assertIn("Scan mode: discovery", host_report)
         self.assertIn("linux.example -> 192.0.2.10", host_report)
         self.assertIn("Temporary XML: removed after parsing", host_report)
         self.assertNotIn(".xml", host_report)
@@ -177,6 +180,7 @@ class ReportingTests(unittest.TestCase):
                 scan_started_at,
                 [host],
                 "completed",
+                discovery_mode=True,
             )
             cumulative = json.loads(
                 (report_dir / CUMULATIVE_JSON_REPORT_NAME).read_text(encoding="utf-8")
@@ -189,6 +193,7 @@ class ReportingTests(unittest.TestCase):
         self.assertEqual(host_report["target"], "example.test")
         self.assertEqual(host_report["resolved_ip"], "198.51.100.10")
         self.assertEqual(host_report["impacket_status"], "completed")
+        self.assertEqual(host_report["scan_mode"], "discovery")
         service = host_report["hosts"][0]["services"][0]
         self.assertIn("smb", service["matched_profiles"])
         self.assertEqual(service["nse_results"]["smb2-security-mode"], "signing not required")

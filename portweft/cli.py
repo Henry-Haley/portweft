@@ -31,6 +31,8 @@ from portweft.impacket_runner import (
 from portweft.matcher import evidence_summary, has_observable_evidence, match_profiles
 from portweft.models import HostObservation, ServiceObservation
 from portweft.nmap_runner import (
+    build_detailed_command,
+    build_discovery_command,
     build_followup_batch_command,
     build_initial_command,
     build_udp_command,
@@ -104,6 +106,7 @@ PORTWEFT_OPTIONS = {
     "--udp-ports",
     "--no-service-version",
     "--dry-run",
+    "--discovery",
     "--scan-timeout",
     "--max-scan-targets",
     "--allow-large-scan",
@@ -264,6 +267,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="Print planned Nmap commands without executing them",
+    )
+    parser.add_argument(
+        "--discovery",
+        action="store_true",
+        help="Discover all open TCP ports before per-host service enumeration",
     )
     parser.add_argument(
         "--scan-timeout",
@@ -476,6 +484,8 @@ def validate_flag_conflicts(
 ) -> None:
     if parsed.ports and parsed.top_ports:
         parser.error("Use either -p/--ports or --top-ports, not both.")
+    if parsed.discovery and (parsed.ports or parsed.top_ports):
+        parser.error("Use --discovery without -p/--ports or --top-ports.")
     if parsed.no_udp and option_was_supplied(argv, "--udp-ports"):
         parser.error("Use either --no-udp or --udp-ports, not both.")
 
@@ -554,6 +564,10 @@ def run(argv: list[str] | None = None) -> int:
         + raw_nmap_args
         + normalize_unknown_nmap_args(unknown_nmap_args)
     )
+    if parsed.discovery and any(
+        arg.startswith(("-p", "--top-ports")) for arg in extra_nmap_args
+    ):
+        parser.error("Use --discovery without -p/--ports or --top-ports.")
     validate_nmap_passthrough(extra_nmap_args)
 
     targets = split_targets(parsed.targets)
@@ -597,13 +611,15 @@ def run(argv: list[str] | None = None) -> int:
         prepare_output_dirs(scan_dir, report_dir)
     timeout_seconds = command_timeout(parsed)
 
-    initial_command = build_initial_command(
+    initial_builder = build_discovery_command if parsed.discovery else build_initial_command
+    initial_label = "TCP discovery scan" if parsed.discovery else "Initial Nmap scan"
+    initial_command = initial_builder(
         parsed,
         nmap_targets,
         initial_xml,
         extra_nmap_args,
     )
-    print_step("Initial Nmap scan starting")
+    print_step(f"{initial_label} starting")
     initial_result = run_command(
         initial_command,
         parsed.dry_run,
@@ -611,7 +627,7 @@ def run(argv: list[str] | None = None) -> int:
     )
     if not initial_result.ok:
         return initial_result.exit_code
-    print_section_done("Initial Nmap scan", f"XML saved to {initial_xml}")
+    print_section_done(initial_label, f"XML saved to {initial_xml}")
 
     udp_result = None
     if udp_skip_detail:
@@ -630,6 +646,11 @@ def run(argv: list[str] | None = None) -> int:
             print_step("UDP companion scan failed; continuing with available TCP results")
 
     if parsed.dry_run:
+        if parsed.discovery:
+            print_section_done(
+                "Detailed service enumeration",
+                "planned per host after discovery results are available",
+            )
         print_section_done("Dry run", "no files written")
         return 0
 
@@ -637,6 +658,16 @@ def run(argv: list[str] | None = None) -> int:
     hosts = parse_nmap_xml(initial_xml, parsed.max_script_output_chars)
     annotate_hosts_with_targets(hosts, resolutions)
     print_section_done("Initial XML parse")
+
+    if parsed.discovery:
+        run_discovery_enumeration(
+            parsed,
+            extra_nmap_args,
+            scan_dir,
+            hosts,
+            resolutions,
+            timeout_seconds,
+        )
 
     if udp_result is not None and udp_result.ok:
         print_step(f"Parsing UDP XML: {udp_xml}")
@@ -682,6 +713,7 @@ def run(argv: list[str] | None = None) -> int:
             scan_started_at,
             hosts,
             impacket_status,
+            discovery_mode=parsed.discovery,
         )
     else:
         written_reports = write_reports(
@@ -690,6 +722,7 @@ def run(argv: list[str] | None = None) -> int:
             scan_started_at,
             hosts,
             impacket_status,
+            discovery_mode=parsed.discovery,
         )
     print_section_done("Report writing", f"{len(written_reports)} file(s) in {report_dir}")
     try:
@@ -754,6 +787,67 @@ def announce_host_findings(hosts: list[HostObservation]) -> None:
     for host in hosts:
         print_host_os(host)
         print_open_services(host)
+
+
+def run_discovery_enumeration(
+    parsed: argparse.Namespace,
+    extra_nmap_args: list[str],
+    scan_dir: Path,
+    hosts: list[HostObservation],
+    resolutions: list[TargetResolution],
+    timeout_seconds: float | None = None,
+) -> None:
+    for host in list(hosts):
+        ports = sorted(
+            {
+                service.port
+                for service in host.services
+                if service.protocol.lower() == "tcp"
+            }
+        )
+        if not ports:
+            print_section_done(
+                "Detailed service enumeration",
+                f"skipped for {host.address}; no open TCP ports",
+            )
+            continue
+
+        port_text = ",".join(str(port) for port in ports)
+        xml_path = scan_dir / f"{scan_dir.name}-{safe_name(host.address)}-detailed.xml"
+        print_step(f"Detailed service enumeration starting for {host.address}:{port_text}/tcp")
+        result = run_command(
+            build_detailed_command(
+                parsed,
+                host.address,
+                ports,
+                xml_path,
+                extra_nmap_args,
+            ),
+            parsed.dry_run,
+            timeout_seconds=timeout_seconds,
+        )
+        if not result.ok:
+            print_step(
+                f"Detailed service enumeration failed for {host.address}; "
+                "continuing with other hosts"
+            )
+            continue
+        try:
+            update_hosts = parse_nmap_xml(xml_path, parsed.max_script_output_chars)
+            annotate_hosts_with_targets(update_hosts, resolutions)
+        except PortWeftError as error:
+            print_error(str(error))
+            print_step(
+                f"Detailed service enumeration parse failed for {host.address}; "
+                "continuing with other hosts"
+            )
+            continue
+        merge_hosts(hosts, update_hosts)
+        print_section_done(
+            "Detailed service enumeration",
+            f"{host.address}:{port_text}/tcp",
+        )
+    print_section_done("Detailed service enumeration")
 
 
 def run_followups(
