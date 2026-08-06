@@ -1,7 +1,7 @@
 # PortWeft
 
 PortWeft is a lightweight wrapper around Nmap for authorized service discovery
-and structured output, not exploitation.
+and structured output.
 
 It runs an initial scan, parses Nmap XML results, and performs low-noise
 follow-up checks to extract useful service data such as versions, banners,
