@@ -189,7 +189,7 @@ def split_nmap_args(value: str) -> list[str]:
 
 
 def validate_nmap_passthrough(args: list[str]) -> None:
-    conflicts = [arg for arg in args if arg in OUTPUT_FLAGS]
+    conflicts = [arg for arg in args if is_output_flag(arg)]
     if conflicts:
         joined = ", ".join(conflicts)
         raise NmapOutputConflictError(
@@ -197,6 +197,17 @@ def validate_nmap_passthrough(args: list[str]) -> None:
             f"Remove these passthrough flags and use --output-dir instead: {joined}"
         )
     validate_nmap_passthrough_values(args)
+
+
+def is_output_flag(arg: str) -> bool:
+    option = arg.split("=", 1)[0]
+    if option in OUTPUT_FLAGS:
+        return True
+    return any(
+        arg.startswith(flag) and arg != flag
+        for flag in OUTPUT_FLAGS
+        if flag.startswith("-o") and not flag.startswith("--")
+    )
 
 
 def validate_nmap_passthrough_values(args: list[str]) -> None:

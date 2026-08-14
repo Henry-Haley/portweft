@@ -106,8 +106,10 @@ class NmapRunnerTests(unittest.TestCase):
             split_nmap_args('--script "unterminated')
 
     def test_validate_nmap_passthrough_rejects_output_flags(self) -> None:
-        with self.assertRaises(NmapOutputConflictError):
-            validate_nmap_passthrough(["-T4", "-oX", "scan.xml"])
+        for args in (["-T4", "-oX", "scan.xml"], ["-oXscan.xml"], ["-oAresults"]):
+            with self.subTest(args=args):
+                with self.assertRaises(NmapOutputConflictError):
+                    validate_nmap_passthrough(args)
 
     def test_validate_nmap_passthrough_rejects_bad_numeric_values(self) -> None:
         with self.assertRaises(NmapPassthroughError):
