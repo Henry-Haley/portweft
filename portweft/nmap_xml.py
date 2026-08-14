@@ -76,7 +76,7 @@ def parse_host_element(
             continue
         if not 1 <= port <= 65535:
             continue
-        protocol = port_elem.attrib.get("protocol", "tcp").lower()
+        protocol = port_elem.attrib.get("protocol", "").lower()
         if protocol not in VALID_PROTOCOLS:
             continue
 
