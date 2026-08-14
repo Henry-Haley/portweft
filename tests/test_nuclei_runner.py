@@ -165,6 +165,25 @@ class NucleiRunnerTests(unittest.TestCase):
         self.assertEqual(status, "partial failure: output unavailable")
         self.assertEqual(count, 0)
 
+    def test_success_with_unreadable_output_is_partial_failure(self) -> None:
+        host = HostObservation(
+            address="192.0.2.10",
+            services=[service("192.0.2.10", 80, "http")],
+        )
+
+        def successful_run(command, *_args):
+            Path(command[command.index("-o") + 1]).mkdir()
+            return ExternalResult(exit_code=0)
+
+        with temporary_directory() as temp_dir:
+            scan_dir = Path(temp_dir) / "run"
+            scan_dir.mkdir()
+            with patch("portweft.nuclei_runner.run_external_command", successful_run):
+                status, count = run_nuclei("nuclei", [host], scan_dir, 10, 0)
+
+        self.assertEqual(status, "partial failure: output unavailable")
+        self.assertEqual(count, 0)
+
     def test_interrupt_is_a_partial_nuclei_failure(self) -> None:
         host = HostObservation(
             address="192.0.2.10",
