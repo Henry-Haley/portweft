@@ -232,16 +232,21 @@ def run_nuclei(
     except KeyboardInterrupt:
         interrupted = True
         result = ExternalResult(exit_code=130)
+    output_missing = False
     try:
         with output_path.open(encoding="utf-8", errors="replace") as output:
             findings = parse_nuclei_lines(output)
     except FileNotFoundError:
         findings = []
+        output_missing = True
     except OSError as error:
         print_error(f"Could not read Nuclei JSONL output: {error}")
         findings = []
     attach_nuclei_findings(hosts, findings)
     if result.ok:
+        if output_missing:
+            print_error("Nuclei completed without producing a JSONL output file.")
+            return "partial failure: output unavailable", len(findings)
         return "completed", len(findings)
 
     if interrupted:
