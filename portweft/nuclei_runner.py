@@ -94,18 +94,29 @@ def parse_nuclei_jsonl(output: str) -> list[NucleiFinding]:
 
 
 def parse_nuclei_lines(lines: Iterable[str]) -> list[NucleiFinding]:
+    findings, _malformed = parse_nuclei_records(lines)
+    return findings
+
+
+def parse_nuclei_records(lines: Iterable[str]) -> tuple[list[NucleiFinding], int]:
     findings: list[NucleiFinding] = []
     seen: set[tuple[str, int | None, str, str]] = set()
+    malformed = 0
     for line in lines:
         if not line.strip():
             continue
         try:
             item = json.loads(line)
         except (json.JSONDecodeError, TypeError):
+            malformed += 1
             continue
         if not isinstance(item, dict):
+            malformed += 1
             continue
         finding = finding_from_json(item)
+        if not finding.template_id or not finding.host:
+            malformed += 1
+            continue
         key = (
             finding.host,
             finding.port,
@@ -116,7 +127,7 @@ def parse_nuclei_lines(lines: Iterable[str]) -> list[NucleiFinding]:
             continue
         seen.add(key)
         findings.append(finding)
-    return findings
+    return findings, malformed
 
 
 def finding_from_json(item: dict) -> NucleiFinding:
@@ -233,9 +244,10 @@ def run_nuclei(
         interrupted = True
         result = ExternalResult(exit_code=130)
     output_unavailable = False
+    malformed_records = 0
     try:
         with output_path.open(encoding="utf-8", errors="replace") as output:
-            findings = parse_nuclei_lines(output)
+            findings, malformed_records = parse_nuclei_records(output)
     except FileNotFoundError:
         findings = []
         output_unavailable = True
@@ -248,6 +260,9 @@ def run_nuclei(
         if output_unavailable:
             print_error("Nuclei completed without producing a JSONL output file.")
             return "partial failure: output unavailable", len(findings)
+        if malformed_records:
+            print_error(f"Nuclei produced {malformed_records} malformed JSONL record(s).")
+            return "partial failure: malformed output", len(findings)
         return "completed", len(findings)
 
     if interrupted:

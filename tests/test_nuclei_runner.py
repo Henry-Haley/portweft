@@ -99,6 +99,7 @@ class NucleiRunnerTests(unittest.TestCase):
         self.assertEqual(parsed[0].port, 8080)
         self.assertEqual(parsed[0].severity, "high")
         self.assertEqual(parse_nuclei_jsonl(""), [])
+        self.assertEqual(parse_nuclei_jsonl("{}\n[]"), [])
 
     def test_nonzero_exit_keeps_jsonl_findings_as_partial_results(self) -> None:
         host = HostObservation(
@@ -183,6 +184,27 @@ class NucleiRunnerTests(unittest.TestCase):
 
         self.assertEqual(status, "partial failure: output unavailable")
         self.assertEqual(count, 0)
+
+    def test_success_with_malformed_output_is_partial_failure(self) -> None:
+        host = HostObservation(
+            address="192.0.2.10",
+            services=[service("192.0.2.10", 80, "http")],
+        )
+
+        def successful_run(command, *_args):
+            output_path = Path(command[command.index("-o") + 1])
+            output_path.write_text("{}\nnot json\n", encoding="utf-8")
+            return ExternalResult(exit_code=0)
+
+        with temporary_directory() as temp_dir:
+            scan_dir = Path(temp_dir) / "run"
+            scan_dir.mkdir()
+            with patch("portweft.nuclei_runner.run_external_command", successful_run):
+                status, count = run_nuclei("nuclei", [host], scan_dir, 10, 0)
+
+        self.assertEqual(status, "partial failure: malformed output")
+        self.assertEqual(count, 0)
+        self.assertEqual(host.nuclei_findings, [])
 
     def test_interrupt_is_a_partial_nuclei_failure(self) -> None:
         host = HostObservation(
