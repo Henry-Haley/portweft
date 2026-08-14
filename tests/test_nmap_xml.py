@@ -139,6 +139,25 @@ class NmapXmlTests(unittest.TestCase):
 
         self.assertEqual([service.port for service in hosts[0].services], [443])
 
+    def test_non_ip_addresses_do_not_become_host_observations(self) -> None:
+        with temporary_directory() as temp_dir:
+            path = Path(temp_dir) / "mac-only.xml"
+            path.write_text(
+                """
+                <nmaprun>
+                  <host>
+                    <address addr="00:11:22:33:44:55" addrtype="mac"/>
+                    <ports><port protocol="tcp" portid="80"><state state="open"/></port></ports>
+                  </host>
+                </nmaprun>
+                """,
+                encoding="utf-8",
+            )
+
+            hosts = parse_nmap_xml(path)
+
+        self.assertEqual(hosts, [])
+
     def test_merge_hosts_updates_identity_and_services(self) -> None:
         base_host = HostObservation(
             address="192.0.2.10",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+import ipaddress
 from pathlib import Path
 
 from portweft.errors import NmapXmlParseError
@@ -111,9 +112,24 @@ def first_address(host_elem: ET.Element) -> str:
     addresses = host_elem.findall("address")
     for addr_type in ("ipv4", "ipv6"):
         for address in addresses:
-            if address.attrib.get("addrtype") == addr_type:
-                return address.attrib.get("addr", "")
-    return addresses[0].attrib.get("addr", "") if addresses else ""
+            if address.attrib.get("addrtype") != addr_type:
+                continue
+            candidate = address.attrib.get("addr", "")
+            if is_ip_address(candidate):
+                return candidate
+    for address in addresses:
+        candidate = address.attrib.get("addr", "")
+        if is_ip_address(candidate):
+            return candidate
+    return ""
+
+
+def is_ip_address(value: str) -> bool:
+    try:
+        ipaddress.ip_address(value)
+        return True
+    except ValueError:
+        return False
 
 
 def first_hostname(host_elem: ET.Element) -> str:
