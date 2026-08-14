@@ -26,6 +26,8 @@ def sanitize_text(value: object, preserve_newlines: bool = False) -> str:
             cleaned.append(" ")
         elif codepoint < 32 or codepoint == 127:
             cleaned.append(" ")
+        elif 0xD800 <= codepoint <= 0xDFFF:
+            cleaned.append("\N{REPLACEMENT CHARACTER}")
         else:
             cleaned.append(char)
     return "".join(cleaned)

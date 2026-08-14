@@ -106,6 +106,17 @@ class CliTests(unittest.TestCase):
         self.assertEqual(exit_code, 130)
         self.assertIn("Interrupted by user", stderr.getvalue())
 
+    def test_invalid_unicode_target_is_safe_on_strict_utf8_stderr(self) -> None:
+        stderr_bytes = io.BytesIO()
+        stderr = io.TextIOWrapper(stderr_bytes, encoding="utf-8", errors="strict")
+
+        with contextlib.redirect_stderr(stderr):
+            exit_code = main(["\ud800", "--dry-run"])
+        stderr.flush()
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("DNS resolution failed", stderr_bytes.getvalue().decode("utf-8"))
+
     def test_package_directory_invocation_prints_help(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]
         completed = subprocess.run(
