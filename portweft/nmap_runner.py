@@ -41,6 +41,46 @@ OUTPUT_FLAGS = {
     "--webxml",
 }
 
+NMAP_OPTIONS_WITH_VALUES = {
+    "-D",
+    "-S",
+    "-e",
+    "-g",
+    "-iL",
+    "-oA",
+    "-oG",
+    "-oN",
+    "-oS",
+    "-oX",
+    "-p",
+    "-T",
+    "--data-length",
+    "--dns-servers",
+    "--exclude",
+    "--excludefile",
+    "--host-timeout",
+    "--initial-rtt-timeout",
+    "--max-hostgroup",
+    "--max-parallelism",
+    "--max-rate",
+    "--max-retries",
+    "--max-rtt-timeout",
+    "--max-scan-delay",
+    "--min-hostgroup",
+    "--min-parallelism",
+    "--min-rate",
+    "--min-rtt-timeout",
+    "--scan-delay",
+    "--scanflags",
+    "--script",
+    "--script-args",
+    "--source-port",
+    "--spoof-mac",
+    "--top-ports",
+    "--ttl",
+    "--version-intensity",
+}
+
 UDP_INCOMPATIBLE_FLAGS = {
     "-A",
     "-sC",
@@ -162,6 +202,8 @@ def validate_nmap_passthrough_values(args: list[str]) -> None:
     while index < len(args):
         arg = args[index]
         option, value, consumed_next = split_option_value(arg, args, index)
+        if option in NMAP_OPTIONS_WITH_VALUES and not value:
+            raise NmapPassthroughError(f"{option} expects a value.")
         if option in NMAP_INTEGER_OPTIONS:
             minimum, maximum = NMAP_INTEGER_OPTIONS[option]
             validate_int_option(option, value, minimum, maximum)

@@ -38,6 +38,7 @@ from portweft.impacket_runner import (
 from portweft.matcher import evidence_summary, has_observable_evidence, match_profiles
 from portweft.models import HostObservation, ServiceObservation
 from portweft.nmap_runner import (
+    NMAP_OPTIONS_WITH_VALUES,
     build_detailed_command,
     build_followup_batch_command,
     build_initial_command,
@@ -147,47 +148,6 @@ PORTWEFT_OPTIONS_WITH_VALUES = {
     "--nuclei-path",
     "--stats-every",
 }
-NMAP_OPTIONS_WITH_VALUES = {
-    "-D",
-    "-S",
-    "-e",
-    "-g",
-    "-iL",
-    "-oA",
-    "-oG",
-    "-oN",
-    "-oS",
-    "-oX",
-    "-p",
-    "-T",
-    "--data-length",
-    "--dns-servers",
-    "--exclude",
-    "--excludefile",
-    "--host-timeout",
-    "--initial-rtt-timeout",
-    "--max-hostgroup",
-    "--max-parallelism",
-    "--max-rate",
-    "--max-retries",
-    "--max-rtt-timeout",
-    "--max-scan-delay",
-    "--min-hostgroup",
-    "--min-parallelism",
-    "--min-rate",
-    "--min-rtt-timeout",
-    "--scan-delay",
-    "--scanflags",
-    "--script",
-    "--script-args",
-    "--source-port",
-    "--spoof-mac",
-    "--top-ports",
-    "--ttl",
-    "--version-intensity",
-}
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="portweft",

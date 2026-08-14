@@ -397,7 +397,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("Resolved scan targets: 127.0.0.1", output)
         self.assertIn("--max-retries 2 --script banner", output)
 
-    def test_raw_nmap_value_cannot_swallow_following_portweft_option(self) -> None:
+    def test_raw_nmap_missing_value_cannot_swallow_following_portweft_option(self) -> None:
         with temporary_directory() as temp_dir:
             stderr = io.StringIO()
             with contextlib.redirect_stderr(stderr):
@@ -412,10 +412,8 @@ class CliTests(unittest.TestCase):
                     ]
                 )
 
-        output = stderr.getvalue()
-        self.assertEqual(exit_code, 0)
-        self.assertIn("--script banner", output)
-        self.assertNotIn("--json", output)
+        self.assertEqual(exit_code, 2)
+        self.assertIn("--script expects a value", stderr.getvalue())
 
     def test_conflicting_ports_and_top_ports_exit_before_scan(self) -> None:
         with temporary_directory() as temp_dir:
