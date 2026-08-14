@@ -115,13 +115,16 @@ def parse_rustscan_greppable(output: str) -> dict[str, set[int]]:
         if not match:
             continue
         host, ports_text = match.groups()
+        host = host.strip()
+        if not valid_host(host):
+            continue
         ports = {
             port
             for item in ports_text.split(",")
             if (port := valid_port(item.strip())) is not None
         }
         if ports:
-            discovered.setdefault(host.strip(), set()).update(ports)
+            discovered.setdefault(host, set()).update(ports)
     return discovered
 
 
@@ -136,9 +139,10 @@ def parse_masscan_lines(lines: Iterable[str]) -> dict[str, set[int]]:
         if not match:
             continue
         port = valid_port(match.group(1))
-        if port is None:
+        host = match.group(2)
+        if port is None or not valid_host(host):
             continue
-        discovered.setdefault(match.group(2), set()).add(port)
+        discovered.setdefault(host, set()).add(port)
     return discovered
 
 
@@ -148,6 +152,13 @@ def valid_port(value: str) -> int | None:
     except ValueError:
         return None
     return port if 1 <= port <= 65535 else None
+
+
+def valid_host(value: str) -> bool:
+    try:
+        return ipaddress.ip_address(value.strip("[]")).version in (4, 6)
+    except ValueError:
+        return False
 
 
 def discovery_ports_from_hosts(hosts: list[HostObservation]) -> dict[str, set[int]]:

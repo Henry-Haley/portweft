@@ -86,6 +86,7 @@ class DiscoveryRunnerTests(unittest.TestCase):
     def test_rustscan_parser_ignores_malformed_lines_and_deduplicates(self) -> None:
         output = """
         192.0.2.10 -> [22,80,80,bad,70000]
+        not-an-ip -> [443]
         noise
         192.0.2.11 -> [443]
         192.0.2.12 -> []
@@ -104,6 +105,7 @@ class DiscoveryRunnerTests(unittest.TestCase):
         open tcp 445 192.0.2.11 1236
         open udp 53 192.0.2.10 1237
         open tcp nope 192.0.2.12 1238
+        open tcp 8080 not-an-ip 1239
         """
         self.assertEqual(
             parse_masscan_list(output),
