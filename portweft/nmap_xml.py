@@ -67,10 +67,17 @@ def parse_host_element(
         if state != "open":
             continue
 
+        try:
+            port = int(port_elem.attrib["portid"])
+        except (KeyError, ValueError):
+            continue
+        if not 1 <= port <= 65535:
+            continue
+
         service_elem = port_elem.find("service")
         service = ServiceObservation(
             host=address,
-            port=int(port_elem.attrib["portid"]),
+            port=port,
             protocol=port_elem.attrib.get("protocol", "tcp"),
             state=state,
             service_name=service_attribute(service_elem, "name"),

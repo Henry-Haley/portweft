@@ -113,6 +113,30 @@ class NmapXmlTests(unittest.TestCase):
             with self.assertRaises(NmapXmlParseError):
                 parse_nmap_xml(path)
 
+    def test_invalid_open_port_records_are_ignored(self) -> None:
+        with temporary_directory() as temp_dir:
+            path = Path(temp_dir) / "invalid-port.xml"
+            path.write_text(
+                """
+                <nmaprun>
+                  <host>
+                    <address addr="192.0.2.10" addrtype="ipv4"/>
+                    <ports>
+                      <port protocol="tcp" portid="nope"><state state="open"/></port>
+                      <port protocol="tcp" portid="0"><state state="open"/></port>
+                      <port protocol="tcp" portid="70000"><state state="open"/></port>
+                      <port protocol="tcp" portid="443"><state state="open"/></port>
+                    </ports>
+                  </host>
+                </nmaprun>
+                """,
+                encoding="utf-8",
+            )
+
+            hosts = parse_nmap_xml(path)
+
+        self.assertEqual([service.port for service in hosts[0].services], [443])
+
     def test_merge_hosts_updates_identity_and_services(self) -> None:
         base_host = HostObservation(
             address="192.0.2.10",
