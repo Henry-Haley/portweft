@@ -38,7 +38,7 @@ def resolve_target(target: str, mode: ResolveMode = "first") -> TargetResolution
 
     try:
         infos = socket.getaddrinfo(target, None, type=socket.SOCK_STREAM)
-    except OSError as error:
+    except (OSError, UnicodeError) as error:
         return TargetResolution(original=target, error=str(error))
 
     addresses = unique_addresses(infos)

@@ -70,6 +70,12 @@ class TargetResolutionTests(unittest.TestCase):
         self.assertIn("name not known", resolutions[0].error)
         self.assertEqual(scan_targets(resolutions), [])
 
+    def test_invalid_unicode_domain_reports_error(self) -> None:
+        resolutions = resolve_targets(["\ud800"])
+
+        self.assertFalse(resolutions[0].ok)
+        self.assertTrue(resolutions[0].error)
+
     def test_invalid_ip_like_target_does_not_query_dns(self) -> None:
         with patch("portweft.targets.socket.getaddrinfo") as getaddrinfo:
             resolutions = resolve_targets(["999.999.999.999"])
