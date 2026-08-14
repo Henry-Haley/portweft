@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from collections import deque
 from dataclasses import dataclass
+import math
 import os
 import shlex
 import shutil
@@ -208,7 +209,7 @@ def validate_float_option(option: str, value: str | None) -> None:
         number = float(value)
     except ValueError as error:
         raise NmapPassthroughError(f"{option} expects a numeric value: {value}") from error
-    if number <= 0:
+    if not math.isfinite(number) or number <= 0:
         raise NmapPassthroughError(f"{option} must be greater than zero: {value}")
 
 
@@ -227,7 +228,7 @@ def validate_time_option(option: str, value: str | None) -> None:
         raise NmapPassthroughError(
             f"{option} expects a time value like 500ms, 30s, 5m, or 1h: {value}"
         ) from error
-    if number <= 0:
+    if not math.isfinite(number) or number <= 0:
         raise NmapPassthroughError(f"{option} must be greater than zero: {value}")
 
 

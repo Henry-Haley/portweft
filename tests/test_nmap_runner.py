@@ -104,6 +104,13 @@ class NmapRunnerTests(unittest.TestCase):
         with self.assertRaises(NmapPassthroughError):
             validate_nmap_passthrough(["--host-timeout", "notatime"])
 
+    def test_validate_nmap_passthrough_rejects_nonfinite_values(self) -> None:
+        for option in ("--max-rate", "--host-timeout"):
+            for value in ("nan", "inf"):
+                with self.subTest(option=option, value=value):
+                    with self.assertRaises(NmapPassthroughError):
+                        validate_nmap_passthrough([option, value])
+
     def test_parse_port_spec_accepts_ranges_and_comma_lists(self) -> None:
         self.assertEqual(parse_port_spec("1-3,65342"), {1, 2, 3, 65342})
 
