@@ -248,6 +248,29 @@ class NmapXmlTests(unittest.TestCase):
         self.assertEqual(len(base_host.services), 1)
         self.assertEqual(base_host.services[0].product, "nginx")
 
+    def test_merge_hosts_matches_equivalent_ipv6_spellings(self) -> None:
+        base_hosts = [
+            HostObservation(
+                address="2001:0db8:0:0:0:0:0:1",
+                services=[ServiceObservation("2001:db8::1", 80, "tcp", "open")],
+            )
+        ]
+        update_hosts = [
+            HostObservation(
+                address="2001:db8::1",
+                services=[
+                    ServiceObservation(
+                        "2001:db8::1", 80, "tcp", "open", product="nginx"
+                    )
+                ],
+            )
+        ]
+
+        merge_hosts(base_hosts, update_hosts)
+
+        self.assertEqual(len(base_hosts), 1)
+        self.assertEqual(base_hosts[0].services[0].product, "nginx")
+
 
 if __name__ == "__main__":
     unittest.main()

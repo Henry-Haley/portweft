@@ -76,6 +76,11 @@ class TargetResolutionTests(unittest.TestCase):
         self.assertFalse(resolutions[0].ok)
         self.assertTrue(resolutions[0].error)
 
+    def test_direct_ipv6_target_is_normalized_for_scanner_identity(self) -> None:
+        resolutions = resolve_targets(["2001:0db8:0:0:0:0:0:1"])
+
+        self.assertEqual(scan_targets(resolutions), ["2001:db8::1"])
+
     def test_invalid_ip_like_target_does_not_query_dns(self) -> None:
         with patch("portweft.targets.socket.getaddrinfo") as getaddrinfo:
             resolutions = resolve_targets(["999.999.999.999"])

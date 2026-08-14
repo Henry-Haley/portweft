@@ -31,8 +31,8 @@ def resolve_targets(
 
 
 def resolve_target(target: str, mode: ResolveMode = "first") -> TargetResolution:
-    if is_ip_or_network(target):
-        return TargetResolution(original=target, addresses=(target,))
+    if normalized := normalize_ip_or_network(target):
+        return TargetResolution(original=target, addresses=(normalized,))
     if looks_like_invalid_ip_or_network(target):
         return TargetResolution(original=target, error="invalid IP address or network")
 
@@ -50,16 +50,23 @@ def resolve_target(target: str, mode: ResolveMode = "first") -> TargetResolution
 
 
 def is_ip_or_network(value: str) -> bool:
+    return bool(normalize_ip_or_network(value))
+
+
+def normalize_ip_or_network(value: str) -> str:
+    if address := normalize_ip(value):
+        return address
     try:
-        ipaddress.ip_address(value)
-        return True
+        return str(ipaddress.ip_network(value, strict=False))
     except ValueError:
-        pass
+        return ""
+
+
+def normalize_ip(value: str) -> str:
     try:
-        ipaddress.ip_network(value, strict=False)
-        return True
+        return str(ipaddress.ip_address(value.strip("[]")))
     except ValueError:
-        return False
+        return ""
 
 
 def looks_like_invalid_ip_or_network(value: str) -> bool:
@@ -80,7 +87,9 @@ def unique_addresses(infos: list[tuple]) -> list[str]:
     for family, _type, _proto, _canonname, sockaddr in infos:
         if family not in (socket.AF_INET, socket.AF_INET6):
             continue
-        address = sockaddr[0]
+        address = normalize_ip(sockaddr[0])
+        if not address:
+            continue
         if address in seen:
             continue
         seen.add(address)
@@ -129,7 +138,7 @@ def address_target_map(resolutions: list[TargetResolution]) -> dict[str, str]:
     mapping: dict[str, str] = {}
     for resolution in successful_resolutions(resolutions):
         for address in resolution.addresses:
-            mapping.setdefault(address, resolution.original)
+            mapping.setdefault(normalize_ip(address) or address, resolution.original)
     return mapping
 
 
@@ -139,7 +148,8 @@ def annotate_hosts_with_targets(
 ) -> None:
     mapping = address_target_map(resolutions)
     for host in hosts:
-        original = mapping.get(host.address) or containing_original_target(
+        identity = normalize_ip(host.address) or host.address
+        original = mapping.get(identity) or containing_original_target(
             host.address, resolutions
         )
         if not original:

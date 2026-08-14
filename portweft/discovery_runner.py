@@ -17,6 +17,7 @@ from portweft.errors import MasscanNotFoundError, RustScanNotFoundError
 from portweft.models import DiscoveryResult, HostObservation, ServiceObservation
 from portweft.nmap_runner import build_discovery_command, run_command
 from portweft.nmap_xml import parse_nmap_xml
+from portweft.targets import normalize_ip
 from portweft.process_runner import (
     close_process_streams,
     subprocess_group_kwargs,
@@ -119,8 +120,8 @@ def parse_rustscan_greppable(output: str) -> dict[str, set[int]]:
         if not match:
             continue
         host, ports_text = match.groups()
-        host = host.strip()
-        if not valid_host(host):
+        host = normalize_ip(host)
+        if not host:
             continue
         ports = {
             port
@@ -143,8 +144,8 @@ def parse_masscan_lines(lines: Iterable[str]) -> dict[str, set[int]]:
         if not match:
             continue
         port = valid_port(match.group(1))
-        host = match.group(2)
-        if port is None or not valid_host(host):
+        host = normalize_ip(match.group(2))
+        if port is None or not host:
             continue
         discovered.setdefault(host, set()).add(port)
     return discovered
@@ -159,10 +160,7 @@ def valid_port(value: str) -> int | None:
 
 
 def valid_host(value: str) -> bool:
-    try:
-        return ipaddress.ip_address(value.strip("[]")).version in (4, 6)
-    except ValueError:
-        return False
+    return bool(normalize_ip(value))
 
 
 def discovery_ports_from_hosts(hosts: list[HostObservation]) -> dict[str, set[int]]:

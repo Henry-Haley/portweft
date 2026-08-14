@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
-import ipaddress
 from pathlib import Path
 
 from portweft.errors import NmapXmlParseError
 from portweft.models import HostObservation, ServiceObservation
 from portweft.profiles import WEB_PORTS
+from portweft.targets import normalize_ip
 
 
 DEFAULT_MAX_SCRIPT_OUTPUT_CHARS = 8192
@@ -120,22 +120,14 @@ def first_address(host_elem: ET.Element) -> str:
         for address in addresses:
             if address.attrib.get("addrtype") != addr_type:
                 continue
-            candidate = address.attrib.get("addr", "")
-            if is_ip_address(candidate):
+            candidate = normalize_ip(address.attrib.get("addr", ""))
+            if candidate:
                 return candidate
     for address in addresses:
-        candidate = address.attrib.get("addr", "")
-        if is_ip_address(candidate):
+        candidate = normalize_ip(address.attrib.get("addr", ""))
+        if candidate:
             return candidate
     return ""
-
-
-def is_ip_address(value: str) -> bool:
-    try:
-        ipaddress.ip_address(value)
-        return True
-    except ValueError:
-        return False
 
 
 def first_hostname(host_elem: ET.Element) -> str:
@@ -218,12 +210,13 @@ def truncate_script_output(output: str, max_chars: int) -> str:
 
 
 def merge_hosts(base_hosts: list[HostObservation], update_hosts: list[HostObservation]) -> None:
-    by_host = {host.address: host for host in base_hosts}
+    by_host = {normalize_ip(host.address) or host.address: host for host in base_hosts}
     for update_host in update_hosts:
-        base_host = by_host.get(update_host.address)
+        host_key = normalize_ip(update_host.address) or update_host.address
+        base_host = by_host.get(host_key)
         if base_host is None:
             base_hosts.append(update_host)
-            by_host[update_host.address] = update_host
+            by_host[host_key] = update_host
             continue
 
         merge_host_identity(base_host, update_host)
