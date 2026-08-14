@@ -227,7 +227,7 @@ def run_nuclei(
             stats_every,
             "nuclei CVE validation",
         )
-    except FileNotFoundError as error:
+    except OSError as error:
         raise NucleiNotFoundError(path) from error
     except KeyboardInterrupt:
         interrupted = True

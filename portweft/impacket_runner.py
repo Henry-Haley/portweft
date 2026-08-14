@@ -192,7 +192,7 @@ def run_impacket_command(
             stats_every,
             f"impacket {module_name}",
         )
-    except FileNotFoundError:
+    except OSError:
         return ImpacketResult(
             module_name=module_name,
             exit_code=127,

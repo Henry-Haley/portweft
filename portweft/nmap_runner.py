@@ -297,7 +297,7 @@ def ensure_nmap_available(nmap_path: str, dry_run: bool) -> None:
 
 def resolve_nmap_path(nmap_path: str) -> str | None:
     expanded = Path(os.path.expandvars(os.path.expanduser(nmap_path)))
-    if expanded.exists():
+    if expanded.is_file():
         return str(expanded)
 
     found = shutil.which(nmap_path)
@@ -306,7 +306,7 @@ def resolve_nmap_path(nmap_path: str) -> str | None:
 
     if nmap_path == "nmap":
         for candidate in WINDOWS_NMAP_CANDIDATES:
-            if candidate.exists():
+            if candidate.is_file():
                 return str(candidate)
 
     return None
@@ -549,7 +549,7 @@ def run_command(
             stderr=subprocess.PIPE,
             text=True,
         )
-    except FileNotFoundError as error:
+    except OSError as error:
         raise NmapNotFoundError(command[0]) from error
 
     import threading

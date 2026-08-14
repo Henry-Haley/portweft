@@ -26,7 +26,9 @@ from portweft.nmap_runner import (
     build_udp_command,
     default_udp_ports_for_tcp_ports,
     extract_nmap_error,
+    ensure_nmap_available,
     parse_port_spec,
+    resolve_nmap_path,
     run_command,
     split_nmap_args,
     udp_default_ports_text,
@@ -351,6 +353,18 @@ class NmapRunnerTests(unittest.TestCase):
             with contextlib.redirect_stdout(stdout):
                 with self.assertRaises(NmapNotFoundError):
                     run_command(["missing-nmap"], dry_run=False)
+
+    def test_nmap_directory_path_is_not_available(self) -> None:
+        with self.assertRaises(NmapNotFoundError):
+            ensure_nmap_available(str(Path.cwd()), dry_run=False)
+
+    def test_run_command_converts_launch_permission_error_to_portweft_error(self) -> None:
+        with patch(
+            "portweft.nmap_runner.subprocess.Popen",
+            side_effect=PermissionError("denied"),
+        ):
+            with self.assertRaises(NmapNotFoundError):
+                run_command(["nmap"], dry_run=False)
 
     def test_run_command_returns_nmap_error_text(self) -> None:
         completed = FakeProcess(

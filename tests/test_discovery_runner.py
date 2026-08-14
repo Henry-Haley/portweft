@@ -12,6 +12,7 @@ from portweft.discovery_runner import (
     hosts_from_discovery,
     parse_masscan_list,
     parse_rustscan_greppable,
+    resolve_executable,
     run_discovery,
     select_discovery_backend,
 )
@@ -78,6 +79,9 @@ class DiscoveryRunnerTests(unittest.TestCase):
                 select_discovery_backend("rustscan", ["192.0.2.10"])
             with self.assertRaises(MasscanNotFoundError):
                 select_discovery_backend("masscan", ["192.0.2.10"])
+
+    def test_directory_path_is_not_a_discovery_executable(self) -> None:
+        self.assertIsNone(resolve_executable("."))
 
     def test_rustscan_parser_ignores_malformed_lines_and_deduplicates(self) -> None:
         output = """

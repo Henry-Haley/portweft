@@ -38,7 +38,7 @@ class ExternalResult:
 
 def resolve_executable(path: str) -> str | None:
     expanded = Path(os.path.expandvars(os.path.expanduser(path)))
-    if expanded.exists():
+    if expanded.is_file():
         return str(expanded)
     return shutil.which(path)
 
@@ -219,7 +219,7 @@ def run_discovery(
                 stats_every,
                 "discovery (rustscan)",
             )
-        except FileNotFoundError as error:
+        except OSError as error:
             if parsed.discovery_backend == "auto":
                 print_step("RustScan became unavailable; falling back to Nmap")
                 return run_discovery(
@@ -258,7 +258,7 @@ def run_discovery(
             stats_every,
             "discovery (masscan)",
         )
-    except FileNotFoundError as error:
+    except OSError as error:
         if parsed.discovery_backend == "auto":
             print_step("Masscan became unavailable; falling back to Nmap")
             return run_discovery(
