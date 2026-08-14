@@ -660,10 +660,9 @@ class CliTests(unittest.TestCase):
         failed_host = host("192.0.2.10", 22)
         successful_host = host("192.0.2.11", 8443, 443)
         no_ports_host = host("192.0.2.12")
-        detailed_host = host("192.0.2.11", 443, 8443)
+        detailed_host = host("192.0.2.11", 443)
         detailed_host.services[0].service_name = "https"
         detailed_host.services[0].product = "nginx"
-        detailed_host.services[1].service_name = "https-alt"
         ok = SimpleNamespace(ok=True, exit_code=0)
         failed = SimpleNamespace(ok=False, exit_code=1)
 
@@ -728,6 +727,10 @@ class CliTests(unittest.TestCase):
         self.assertEqual(
             by_address["192.0.2.11"]["services"][0]["product"],
             "nginx",
+        )
+        self.assertEqual(
+            [service["port"] for service in by_address["192.0.2.11"]["services"]],
+            [443],
         )
         self.assertNotIn("192.0.2.12", by_address)
         run_followups.assert_called_once()

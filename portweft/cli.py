@@ -64,6 +64,7 @@ from portweft.targets import (
     annotate_hosts_with_targets,
     has_ipv6_target,
     original_targets,
+    normalize_ip,
     resolve_targets,
     scan_targets,
 )
@@ -994,7 +995,31 @@ def run_discovery_enumeration(
                 "continuing with other hosts"
             )
             continue
-        merge_hosts(hosts, update_hosts)
+        host_identity = normalize_ip(host.address) or host.address
+        host_updates = [
+            update_host
+            for update_host in update_hosts
+            if (normalize_ip(update_host.address) or update_host.address) == host_identity
+        ]
+        if not host_updates:
+            failed = True
+            print_step(
+                f"Detailed service enumeration returned no host record for "
+                f"{host.address}; preserving discovery results"
+            )
+            continue
+        enumerated_tcp_ports = {
+            service.port
+            for update_host in host_updates
+            for service in update_host.services
+            if service.protocol.lower() == "tcp"
+        }
+        host.services[:] = [
+            service
+            for service in host.services
+            if service.protocol.lower() != "tcp" or service.port in enumerated_tcp_ports
+        ]
+        merge_hosts(hosts, host_updates)
         print_section_done(
             "Detailed service enumeration",
             f"{host.address}:{port_text}/tcp",
