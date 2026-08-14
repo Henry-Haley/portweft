@@ -12,7 +12,7 @@ from portweft.targets import normalize_ip
 
 
 DEFAULT_MAX_SCRIPT_OUTPUT_CHARS = 8192
-VALID_PROTOCOLS = {"tcp", "udp", "sctp"}
+VALID_PROTOCOLS = {"tcp", "udp"}
 
 
 def parse_nmap_xml(

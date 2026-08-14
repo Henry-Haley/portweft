@@ -127,6 +127,7 @@ class NmapXmlTests(unittest.TestCase):
                       <port protocol="tcp" portid="70000"><state state="open"/></port>
                       <port protocol="" portid="80"><state state="open"/></port>
                       <port protocol="bogus" portid="81"><state state="open"/></port>
+                      <port protocol="sctp" portid="82"><state state="open"/></port>
                       <port protocol="tcp" portid="443"><state state="open"/></port>
                     </ports>
                   </host>
