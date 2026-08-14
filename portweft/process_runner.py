@@ -44,10 +44,25 @@ def wait_for_process(
 def terminate_process(process: subprocess.Popen) -> None:
     try:
         process.terminate()
+    except OSError:
+        try:
+            process.kill()
+        except OSError:
+            return
+        try:
+            process.wait(timeout=5)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        return
+
+    try:
         process.wait(timeout=5)
     except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=5)
+        try:
+            process.kill()
+            process.wait(timeout=5)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
     except OSError:
         pass
 
