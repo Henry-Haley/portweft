@@ -7,25 +7,64 @@ runtime target.
 
 - Python 3.10+
 - Nmap available on `PATH`
-- Optional: RustScan for fast single-host TCP discovery
+- Optional: RustScan on `PATH` for fast single-host TCP discovery
 - Optional: Masscan for broad/multi-host TCP discovery
 - Optional: Nuclei and its templates for CVE-only validation
 - Optional: Impacket for `--impacket` recon modules
 
 No Python packages are required for normal use. Impacket is only needed when
-optional Impacket recon is enabled. If it is missing, PortWeft prints
-`Install with pip install .[impacket]` and exits without starting the scan.
+optional Impacket recon is enabled.
 
-Install from a source checkout:
+## Installation
+
+### Direct From The Source Tree
+
+This is the simplest option and requires no pip installation:
 
 ```bash
+git clone https://github.com/Henry-Haley/portweft.git
+cd portweft
+python3 -m portweft --help
+```
+
+Run PortWeft from the outer repository root:
+
+```text
+portweft/                 ← run commands here
+├── README.md
+├── pyproject.toml
+├── portweft/             ← Python package; do not cd here
+└── tests/
+```
+
+### pipx
+
+If `pipx` is available and you want a global `portweft` command:
+
+```bash
+pipx install .
+portweft --help
+```
+
+### Virtual Environment
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
 python3 -m pip install .
 portweft --help
 ```
 
-For optional Impacket reconnaissance, install the extra instead:
+Current Kali and Debian releases may reject pip installs outside an isolated
+environment under PEP 668. Use direct source execution, pipx, or a virtual
+environment; do not bypass the protection with `--break-system-packages`.
+
+For optional Impacket reconnaissance, install the extra with pipx or inside the
+activated virtual environment:
 
 ```bash
+pipx install ".[impacket]"
+# or, inside .venv:
 python3 -m pip install ".[impacket]"
 ```
 
@@ -158,13 +197,15 @@ Backend selection defaults to `auto`:
 Choose explicitly:
 
 ```bash
-portweft 192.0.2.10 --discovery --discovery-backend rustscan
-portweft 192.0.2.0/24 --discovery --discovery-backend masscan
-portweft 192.0.2.10 --discovery --discovery-backend nmap
+python3 -m portweft 192.0.2.10 --discovery --discovery-backend rustscan
+python3 -m portweft 192.0.2.0/24 --discovery --discovery-backend masscan
+python3 -m portweft 192.0.2.10 --discovery --discovery-backend nmap
 ```
 
 Explicitly selected missing tools cause a controlled error; only `auto` falls
-back. Override executable paths with `--rustscan-path` or `--masscan-path`.
+back. RustScan must be on `PATH` for explicit RustScan discovery unless its
+executable is supplied with `--rustscan-path`. Override Masscan similarly with
+`--masscan-path`.
 Masscan defaults to 1000 packets/second:
 
 ```bash

@@ -22,7 +22,7 @@ python3 -m compileall -q portweft.py portweft tests/*.py
 
 ## Install Smoke Test
 
-From a fresh checkout:
+From a fresh checkout inside an activated virtual environment:
 
 ```bash
 python3 -m portweft --help

@@ -9,37 +9,35 @@ assessments. It combines fast TCP discovery, targeted Nmap service enumeration,
 service-aware follow-ups, optional Impacket reconnaissance, and CVE-focused
 Nuclei validation into structured text or JSON reports.
 
-It keeps discovery, enrichment, and reporting in one reviewable workflow
-without becoming an exploitation framework.
-
-## Install
+## Run From Source
 
 PortWeft requires Python 3.10+ and Nmap on `PATH`.
 
 ```bash
 git clone https://github.com/Henry-Haley/portweft.git
 cd portweft
-python3 -m pip install .
-portweft --help
+python3 -m portweft --help
 ```
 
-RustScan, Masscan, Nuclei, and Impacket are optional. See the
-[installation and usage guide](docs/usage.md) for their setup and platform
-notes.
+Run from this repository root—the directory containing `README.md`,
+`pyproject.toml`, and the inner `portweft/` package. Core use needs no pip
+installation. For an installed command, Kali/PEP 668 guidance, and optional
+tools, see the [installation and usage guide](docs/usage.md).
 
 ## Quick Start
 
 ```bash
-portweft 192.0.2.10
-portweft 192.0.2.10 --discovery
-portweft 192.0.2.10 --full
-portweft 192.0.2.10 --full --json | jq .
+python3 -m portweft 192.0.2.10
+python3 -m portweft 192.0.2.10 --discovery
+python3 -m portweft 192.0.2.10 --full
+python3 -m portweft 192.0.2.10 --full --json | jq .
 ```
 
 `--full` enables all-port TCP discovery, service-aware Nmap follow-ups,
 allowlisted Impacket reconnaissance, and CVE-tagged Nuclei validation. It does
 not disable the normal UDP companion scan or safety limits. Optional tools must
-be installed before use.
+be installed before use; explicitly selected RustScan must be on `PATH` or set
+with `--rustscan-path`.
 
 ## Pipeline
 
@@ -65,10 +63,6 @@ and is also saved with per-host reports. See the
 - [Documentation index](docs/README.md)
 - [CLI usage and installation](docs/usage.md)
 - [Architecture](docs/architecture.md)
-- [Service profiles](docs/profiles.md)
-- [Safety and scan behavior](docs/safety.md)
-- [Errors and exit behavior](docs/errors.md)
-- [Testing](docs/testing.md)
 
 ## Responsible Use
 
