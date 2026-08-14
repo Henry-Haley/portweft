@@ -11,6 +11,7 @@ from portweft.profiles import WEB_PORTS
 
 
 DEFAULT_MAX_SCRIPT_OUTPUT_CHARS = 8192
+VALID_PROTOCOLS = {"tcp", "udp", "sctp"}
 
 
 def parse_nmap_xml(
@@ -73,12 +74,15 @@ def parse_host_element(
             continue
         if not 1 <= port <= 65535:
             continue
+        protocol = port_elem.attrib.get("protocol", "tcp").lower()
+        if protocol not in VALID_PROTOCOLS:
+            continue
 
         service_elem = port_elem.find("service")
         service = ServiceObservation(
             host=address,
             port=port,
-            protocol=port_elem.attrib.get("protocol", "tcp"),
+            protocol=protocol,
             state=state,
             service_name=service_attribute(service_elem, "name"),
             product=service_attribute(service_elem, "product"),
