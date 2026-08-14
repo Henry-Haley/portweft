@@ -1,6 +1,6 @@
-# First Release Scope
+# Project Scope
 
-This document defines the intended scope for the first usable PortWeft release.
+This document defines PortWeft's supported operating scope and boundaries.
 
 ## In Scope
 
@@ -41,7 +41,7 @@ This document defines the intended scope for the first usable PortWeft release.
 - Nuclei exposure, misconfiguration, technology-only, fuzzing, AI, code, or
   headless modes.
 
-## First Release Definition
+## Operating Boundary
 
 PortWeft is an opening-recon orchestrator, not an autonomous pentesting
 framework. It finds TCP ports, asks Nmap what is running, performs its focused
@@ -65,11 +65,3 @@ additional observations, and stops at a consolidated report.
 - Service detection depends on Nmap probe quality and target behavior.
 - JSON reports are structured, but intentionally limited to observed scan data.
 - Profile definitions are currently built into `portweft/profiles.py`.
-
-## Release Checklist
-
-- `python3 -m unittest discover -v`
-- `python3 -m compileall portweft.py portweft tests`
-- `git diff --check`
-- Confirm README quick-start examples are current.
-- Confirm profile docs match `portweft/profiles.py`.

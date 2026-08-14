@@ -8,23 +8,16 @@ PortWeft uses Python's standard `unittest` framework.
 python3 -m unittest discover -v
 ```
 
-Windows with an explicit interpreter path:
+Windows:
 
 ```powershell
-& 'C:\Users\henry\AppData\Local\Python\bin\python.exe' -m unittest discover -v
+python -m unittest discover -v
 ```
 
 ## Compile Check
 
 ```bash
 python3 -m compileall -q portweft.py portweft tests/*.py
-```
-
-Windows PowerShell:
-
-```powershell
-$testFiles = Get-ChildItem tests -File -Filter *.py
-& 'C:\Users\henry\AppData\Local\Python\bin\python.exe' -m compileall -q portweft.py portweft @($testFiles.FullName)
 ```
 
 ## Install Smoke Test

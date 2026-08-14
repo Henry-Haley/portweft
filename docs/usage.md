@@ -16,7 +16,14 @@ No Python packages are required for normal use. Impacket is only needed when
 optional Impacket recon is enabled. If it is missing, PortWeft prints
 `Install with pip install .[impacket]` and exits without starting the scan.
 
-Manual install from the source tree:
+Install from a source checkout:
+
+```bash
+python3 -m pip install .
+portweft --help
+```
+
+For optional Impacket reconnaissance, install the extra instead:
 
 ```bash
 python3 -m pip install ".[impacket]"
@@ -42,12 +49,6 @@ Windows:
 
 ```powershell
 python -m portweft 192.0.2.10
-```
-
-If the Windows Python launcher is not on `PATH`, use the full interpreter path:
-
-```powershell
-& 'C:\Users\henry\AppData\Local\Python\bin\python.exe' -m portweft 192.0.2.10
 ```
 
 The legacy root launcher also works:
