@@ -6,6 +6,7 @@ import argparse
 from collections import defaultdict
 import datetime as dt
 import ipaddress
+import math
 import shlex
 import shutil
 import sys
@@ -377,7 +378,7 @@ def nonnegative_float(value: str) -> float:
         parsed = float(value)
     except ValueError as error:
         raise argparse.ArgumentTypeError("must be a number") from error
-    if parsed < 0:
+    if not math.isfinite(parsed) or parsed < 0:
         raise argparse.ArgumentTypeError("must be zero or greater")
     return parsed
 

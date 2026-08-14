@@ -55,6 +55,14 @@ class CliTests(unittest.TestCase):
         self.assertIn("--nuclei", output)
         self.assertIn("--discovery-backend", output)
 
+    def test_nonfinite_timing_values_are_rejected(self) -> None:
+        for option in ("--scan-timeout", "--stats-every"):
+            for value in ("nan", "inf", "-inf"):
+                with self.subTest(option=option, value=value):
+                    with self.assertRaises(SystemExit) as raised:
+                        main(["127.0.0.1", option, value, "--dry-run"])
+                    self.assertEqual(raised.exception.code, 2)
+
     def test_full_dry_run_plans_all_stages_on_stderr_and_writes_nothing(self) -> None:
         with temporary_directory() as temp_dir:
             stdout = io.StringIO()
