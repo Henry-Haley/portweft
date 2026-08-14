@@ -1098,6 +1098,7 @@ def run_impacket_recon(
         return "completed: no matching recon modules"
 
     print_step(f"Impacket recon starting ({len(planned)} module run(s))")
+    incomplete = 0
     for service, module_name in planned:
         target = f"{service.host}:{service.port}/{service.protocol}"
         print_step(f"Impacket {module_name} starting for {target}")
@@ -1112,9 +1113,11 @@ def run_impacket_recon(
             **runner_options,
         )
         if result.skipped:
+            incomplete += 1
             print_step(f"Impacket {module_name} skipped for {target}: {result.reason}")
             continue
         if not result.ok:
+            incomplete += 1
             print_step(f"Impacket {module_name} failed for {target}; continuing")
             continue
         if result.output:
@@ -1122,6 +1125,8 @@ def run_impacket_recon(
         print_section_done(f"Impacket {module_name}", target)
 
     print_section_done("Impacket recon")
+    if incomplete:
+        return f"partial failure: {incomplete} of {len(planned)} module run(s) incomplete"
     return "completed"
 
 

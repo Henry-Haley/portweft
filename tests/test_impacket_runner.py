@@ -173,6 +173,23 @@ class ImpacketRunnerTests(unittest.TestCase):
         self.assertEqual(service.scripts["impacket-samrdump"], "samrdump output")
         self.assertEqual(service.scripts["impacket-rpcdump"], "rpcdump output")
 
+    def test_cli_impacket_recon_reports_incomplete_module_runs(self) -> None:
+        host = HostObservation(address="192.0.2.10", services=[smb_service()])
+        parsed = SimpleNamespace(
+            max_impacket_output_chars=4096,
+            impacket_availability=ImpacketAvailability(available=True),
+        )
+        results = [
+            ImpacketResult("samrdump", exit_code=2),
+            ImpacketResult("rpcdump", exit_code=127, skipped=True, reason="missing"),
+        ]
+
+        with patch("portweft.cli.run_impacket_module", side_effect=results):
+            with contextlib.redirect_stderr(io.StringIO()):
+                status = run_impacket_recon(parsed, [host])
+
+        self.assertEqual(status, "partial failure: 2 of 2 module run(s) incomplete")
+
     def test_cli_impacket_recon_exits_when_package_is_missing(self) -> None:
         service = smb_service()
         host = HostObservation(address="192.0.2.10", services=[service])
