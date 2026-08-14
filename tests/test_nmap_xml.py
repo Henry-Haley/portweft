@@ -186,6 +186,23 @@ class NmapXmlTests(unittest.TestCase):
         self.assertEqual(base_host.services[0].product, "OpenSSH")
         self.assertEqual(base_host.services[0].scripts["ssh-hostkey"], "fingerprint")
 
+    def test_merge_hosts_deduplicates_repeated_update_services(self) -> None:
+        base_host = HostObservation(address="192.0.2.10")
+        update_host = HostObservation(
+            address="192.0.2.10",
+            services=[
+                ServiceObservation("192.0.2.10", 80, "tcp", "open"),
+                ServiceObservation(
+                    "192.0.2.10", 80, "tcp", "open", product="nginx"
+                ),
+            ],
+        )
+
+        merge_hosts([base_host], [update_host])
+
+        self.assertEqual(len(base_host.services), 1)
+        self.assertEqual(base_host.services[0].product, "nginx")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -208,6 +208,7 @@ def merge_hosts(base_hosts: list[HostObservation], update_hosts: list[HostObserv
             base_service = by_service.get((update_service.protocol, update_service.port))
             if base_service is None:
                 base_host.services.append(update_service)
+                by_service[(update_service.protocol, update_service.port)] = update_service
                 continue
             merge_service(base_service, update_service)
 
