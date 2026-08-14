@@ -430,7 +430,11 @@ def extract_raw_nmap_args(argv: list[str]) -> tuple[list[str], list[str]]:
             continue
         if token.startswith("-"):
             extracted.append(token)
-            if nmap_option_expects_value(token) and index + 1 < len(argv):
+            if (
+                nmap_option_expects_value(token)
+                and index + 1 < len(argv)
+                and not is_portweft_option(argv[index + 1])
+            ):
                 extracted.append(argv[index + 1])
                 index += 2
                 continue
