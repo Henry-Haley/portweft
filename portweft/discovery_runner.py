@@ -329,15 +329,17 @@ def run_external_command(
     ]
     for reader in readers:
         reader.start()
-    exit_code, _timed_out = wait_for_process(
-        process,
-        timeout_seconds,
-        stats_every,
-        stage,
-    )
-    for reader in readers:
-        reader.join()
-    close_process_streams(process)
+    try:
+        exit_code, _timed_out = wait_for_process(
+            process,
+            timeout_seconds,
+            stats_every,
+            stage,
+        )
+    finally:
+        for reader in readers:
+            reader.join()
+        close_process_streams(process)
     return ExternalResult(
         exit_code,
         stdout_parts[0] if stdout_parts else "",

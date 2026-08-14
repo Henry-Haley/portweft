@@ -81,6 +81,19 @@ class TimeoutProcess(FakeProcess):
         self.terminated = True
 
 
+class InterruptProcess(FakeProcess):
+    def __init__(self) -> None:
+        super().__init__(returncode=130)
+        self.terminated = False
+
+    def wait(self, timeout=None) -> int:
+        _ = timeout
+        raise KeyboardInterrupt
+
+    def terminate(self) -> None:
+        self.terminated = True
+
+
 class NmapRunnerTests(unittest.TestCase):
     def test_split_nmap_args_respects_quotes(self) -> None:
         self.assertEqual(
@@ -413,6 +426,17 @@ class NmapRunnerTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 124)
         self.assertTrue(process.terminated)
         self.assertIn("timed out", stderr.getvalue())
+
+    def test_run_command_closes_streams_when_interrupted(self) -> None:
+        process = InterruptProcess()
+
+        with patch("portweft.nmap_runner.subprocess.Popen", return_value=process):
+            with self.assertRaises(KeyboardInterrupt):
+                run_command(["nmap"], dry_run=False)
+
+        self.assertTrue(process.terminated)
+        self.assertTrue(process.stdout.closed)
+        self.assertTrue(process.stderr.closed)
 
     def test_extract_nmap_error_uses_stdout_when_stderr_is_empty(self) -> None:
         result = SimpleNamespace(exit_code=2, stdout="bad target\n", stderr="")

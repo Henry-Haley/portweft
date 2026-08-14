@@ -569,15 +569,17 @@ def run_command(
     )
     stdout_reader.start()
     stderr_reader.start()
-    exit_code, timed_out = wait_for_process(
-        process,
-        timeout_seconds,
-        stats_every,
-        stage,
-    )
-    stdout_reader.join()
-    stderr_reader.join()
-    close_process_streams(process)
+    try:
+        exit_code, timed_out = wait_for_process(
+            process,
+            timeout_seconds,
+            stats_every,
+            stage,
+        )
+    finally:
+        stdout_reader.join()
+        stderr_reader.join()
+        close_process_streams(process)
 
     result = CommandResult(
         exit_code=exit_code,
