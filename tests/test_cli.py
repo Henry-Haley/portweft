@@ -897,6 +897,40 @@ class CliTests(unittest.TestCase):
         self.assertIn("Could not prepare output directory", stderr.getvalue())
         self.assertIn("Temporary XML cleanup failed", stderr.getvalue())
 
+    def test_retention_failure_after_reports_does_not_hide_completed_scan(self) -> None:
+        host = HostObservation(address="192.0.2.10", status="up")
+        with temporary_directory() as temp_dir:
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with patch("portweft.cli.ensure_nmap_available"):
+                with patch(
+                    "portweft.cli.run_command",
+                    return_value=SimpleNamespace(ok=True, exit_code=0),
+                ):
+                    with patch("portweft.cli.parse_nmap_xml", return_value=[host]):
+                        with patch(
+                            "portweft.cli.prune_old_runs",
+                            side_effect=OutputDirectoryError("reports", "locked"),
+                        ):
+                            with contextlib.redirect_stdout(
+                                stdout
+                            ), contextlib.redirect_stderr(stderr):
+                                exit_code = main(
+                                    [
+                                        "192.0.2.10",
+                                        "--no-udp",
+                                        "--no-follow-up",
+                                        "--keep-runs",
+                                        "1",
+                                        "--output-dir",
+                                        temp_dir,
+                                    ]
+                                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("PortWeft Report", stdout.getvalue())
+        self.assertIn("Output retention cleanup failed", stderr.getvalue())
+
     def test_prune_old_runs_keeps_newest_outputs(self) -> None:
         with temporary_directory() as temp_dir:
             output_root = Path(temp_dir)

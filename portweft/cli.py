@@ -871,7 +871,11 @@ def run(argv: list[str] | None = None) -> int:
     except OutputDirectoryError as error:
         print_error(str(error))
         print_step("Temporary XML cleanup failed; reports were kept")
-    prune_old_runs(output_root, parsed.keep_runs)
+    try:
+        prune_old_runs(output_root, parsed.keep_runs)
+    except OutputDirectoryError as error:
+        print_error(str(error))
+        print_step("Output retention cleanup failed; reports were kept")
     print_section_done(f"{APP_NAME} run")
     sys.stdout.write(cumulative_output)
     sys.stdout.flush()
