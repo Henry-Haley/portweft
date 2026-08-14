@@ -5,7 +5,7 @@ import json
 import unittest
 from pathlib import Path
 
-from portweft.models import HostObservation, ServiceObservation
+from portweft.models import HostObservation, NucleiFinding, ServiceObservation
 from portweft.reporting import (
     CUMULATIVE_JSON_REPORT_NAME,
     CUMULATIVE_REPORT_NAME,
@@ -18,6 +18,76 @@ from tests.helpers import temporary_directory
 
 
 class ReportingTests(unittest.TestCase):
+    def test_text_report_renders_grouped_nuclei_findings(self) -> None:
+        host = HostObservation(
+            address="192.0.2.10",
+            status="up",
+            nuclei_findings=[
+                NucleiFinding(
+                    template_id="CVE-2021-41773",
+                    name="Apache HTTP Server Path Traversal",
+                    severity="high",
+                    matched_at="http://192.0.2.10:80/icons/.%2e/",
+                    host="192.0.2.10",
+                    port=80,
+                )
+            ],
+        )
+        with temporary_directory() as temp_dir:
+            path = Path(temp_dir) / "report.txt"
+            write_report(
+                path,
+                ["192.0.2.10"],
+                Path("initial.xml"),
+                [host],
+                nuclei_status="completed",
+            )
+            report = path.read_text(encoding="utf-8")
+        self.assertIn("NUCLEI CVE RESULTS:", report)
+        self.assertIn("80/tcp:", report)
+        self.assertIn("[HIGH] CVE-2021-41773", report)
+        self.assertIn("Apache HTTP Server Path Traversal", report)
+
+    def test_text_report_has_explicit_no_nuclei_findings_case(self) -> None:
+        host = HostObservation(address="192.0.2.10", status="up")
+        with temporary_directory() as temp_dir:
+            path = Path(temp_dir) / "report.txt"
+            write_report(path, ["192.0.2.10"], Path("initial.xml"), [host])
+            report = path.read_text(encoding="utf-8")
+        nuclei_section = report.split("NUCLEI CVE RESULTS:", 1)[1]
+        self.assertIn("none observed", nuclei_section)
+
+    def test_json_report_exposes_structured_nuclei_findings_and_stage_status(self) -> None:
+        host = HostObservation(
+            address="192.0.2.10",
+            status="up",
+            nuclei_findings=[
+                NucleiFinding(
+                    template_id="CVE-2024-0001",
+                    name="Example",
+                    severity="medium",
+                    matched_at="192.0.2.10:445",
+                    host="192.0.2.10",
+                    port=445,
+                    reference=["https://example.test/CVE-2024-0001"],
+                )
+            ],
+        )
+        resolution = TargetResolution("192.0.2.10", ("192.0.2.10",))
+        with temporary_directory() as temp_dir:
+            written = write_json_reports(
+                Path(temp_dir),
+                [resolution],
+                dt.datetime.now(dt.timezone.utc),
+                [host],
+                nuclei_status="completed",
+            )
+            document = json.loads(written[0].read_text(encoding="utf-8"))
+        finding = document["hosts"][0]["nuclei_findings"][0]
+        self.assertEqual(document["nuclei_status"], "completed")
+        self.assertEqual(finding["template_id"], "CVE-2024-0001")
+        self.assertEqual(finding["port"], 445)
+
     def test_write_report_includes_host_os_service_and_script_output(self) -> None:
         host = HostObservation(
             address="192.0.2.10",

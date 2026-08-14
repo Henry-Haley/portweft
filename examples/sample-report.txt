@@ -46,3 +46,11 @@ IMPACKET RESULTS:
     445/tcp microsoft-ds Microsoft Windows SMB:
       impacket-samrdump:
         SAMR users observed if anonymous enumeration is allowed
+
+NUCLEI CVE RESULTS:
+  Status: completed
+  Host: 192.0.2.10 (example-host)
+    443/tcp:
+      [HIGH] CVE-2026-EXAMPLE
+        Example CVE validation result
+        Matched: https://192.0.2.10:443/example

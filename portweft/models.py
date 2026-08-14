@@ -1,8 +1,29 @@
-"""Data models for parsed Nmap observations."""
+"""Data models for normalized scan observations."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+
+
+@dataclass(slots=True)
+class DiscoveryResult:
+    backend: str
+    open_tcp_ports: dict[str, set[int]] = field(default_factory=dict)
+    status: str = "completed"
+    exit_code: int = 0
+
+
+@dataclass(slots=True)
+class NucleiFinding:
+    template_id: str
+    name: str
+    severity: str
+    matched_at: str
+    matcher_name: str = ""
+    protocol: str = ""
+    host: str = ""
+    port: int | None = None
+    reference: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -35,6 +56,7 @@ class HostObservation:
     os_accuracy: str = ""
     os_source: str = "unknown"
     services: list[ServiceObservation] = field(default_factory=list)
+    nuclei_findings: list[NucleiFinding] = field(default_factory=list)
 
     def display_name(self) -> str:
         address_label = self.address

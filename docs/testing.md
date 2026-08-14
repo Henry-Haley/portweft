@@ -49,7 +49,15 @@ portweft --help
 ```text
 tests/test_cli.py
   CLI dry-run behavior, target resolution, JSON reports, missing Nmap handling,
-  unmatched banners, UDP toggles.
+  unmatched banners, UDP toggles, --full, and STDOUT/STDERR separation.
+
+tests/test_discovery_runner.py
+  Backend selection, RustScan/Masscan parsers and commands, normalized results,
+  and targeted Nmap port scope.
+
+tests/test_nuclei_runner.py
+  CVE-only commands, service target construction, JSONL parsing, deduplication,
+  executable preflight, and partial failure handling.
 
 tests/test_matcher.py
   Banner-first matching, fallback ports, UDP-first ports, unmatched evidence.
@@ -72,10 +80,11 @@ tests/test_profiles.py
   Profile shape and expected profile coverage.
 
 tests/test_reporting.py
-  Text and JSON report content.
+  Text and JSON report content, including structured Nuclei findings.
 
 tests/test_targets.py
-  Domain resolution, IPv4/IPv6 handling, and original-target mapping.
+  Domain resolution, IPv4/IPv6 handling, CIDR membership attribution, and
+  original-target mapping.
 
 tests/fixtures/
   Static Nmap XML samples.

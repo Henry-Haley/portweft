@@ -51,6 +51,43 @@ class CliTests(unittest.TestCase):
         self.assertIn("--udp-ports", output)
         self.assertIn("--impacket", output)
         self.assertIn("--discovery", output)
+        self.assertIn("--full", output)
+        self.assertIn("--nuclei", output)
+        self.assertIn("--discovery-backend", output)
+
+    def test_full_dry_run_plans_all_stages_on_stderr_and_writes_nothing(self) -> None:
+        with temporary_directory() as temp_dir:
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                exit_code = main(
+                    [
+                        "127.0.0.1",
+                        "--full",
+                        "--dry-run",
+                        "--no-udp",
+                        "--output-dir",
+                        temp_dir,
+                    ]
+                )
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(stdout.getvalue(), "")
+            progress = stderr.getvalue()
+            self.assertIn("Discovery backend:", progress)
+            self.assertIn("Detailed service enumeration", progress)
+            self.assertIn("Follow-up scans", progress)
+            self.assertIn("Impacket recon", progress)
+            self.assertIn("Nuclei CVE-only validation", progress)
+            self.assertFalse((Path(temp_dir) / "scans").exists())
+            self.assertFalse((Path(temp_dir) / "reports").exists())
+
+    def test_full_and_no_follow_up_are_a_cli_conflict(self) -> None:
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            with self.assertRaises(SystemExit) as raised:
+                main(["127.0.0.1", "--full", "--no-follow-up", "--dry-run"])
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("--full requires service-aware follow-ups", stderr.getvalue())
 
     def test_keyboard_interrupt_returns_standard_interrupt_exit_code(self) -> None:
         stderr = io.StringIO()
@@ -77,7 +114,7 @@ class CliTests(unittest.TestCase):
     def test_dry_run_prints_command_and_completes_without_nmap(self) -> None:
         with temporary_directory() as temp_dir:
             stdout = io.StringIO()
-            with contextlib.redirect_stdout(stdout):
+            with contextlib.redirect_stderr(stdout):
                 exit_code = main(
                     [
                         "127.0.0.1",
@@ -105,7 +142,7 @@ class CliTests(unittest.TestCase):
     def test_explicit_ports_run_udp_only_when_ports_overlap_udp_defaults(self) -> None:
         with temporary_directory() as temp_dir:
             stdout = io.StringIO()
-            with contextlib.redirect_stdout(stdout):
+            with contextlib.redirect_stderr(stdout):
                 exit_code = main(
                     [
                         "127.0.0.1",
@@ -126,7 +163,7 @@ class CliTests(unittest.TestCase):
     def test_explicit_udp_ports_override_tcp_port_overlap_rule(self) -> None:
         with temporary_directory() as temp_dir:
             stdout = io.StringIO()
-            with contextlib.redirect_stdout(stdout):
+            with contextlib.redirect_stderr(stdout):
                 exit_code = main(
                     [
                         "127.0.0.1",
@@ -160,7 +197,7 @@ class CliTests(unittest.TestCase):
                     )
                 ],
             ):
-                with contextlib.redirect_stdout(stdout):
+                with contextlib.redirect_stderr(stdout):
                     exit_code = main(
                         [
                             "example.test",
@@ -180,7 +217,7 @@ class CliTests(unittest.TestCase):
     def test_dry_run_preserves_nmap_all_ports_shorthand(self) -> None:
         with temporary_directory() as temp_dir:
             stdout = io.StringIO()
-            with contextlib.redirect_stdout(stdout):
+            with contextlib.redirect_stderr(stdout):
                 exit_code = main(
                     [
                         "127.0.0.1",
@@ -199,7 +236,7 @@ class CliTests(unittest.TestCase):
     def test_dry_run_accepts_port_ranges_and_comma_lists(self) -> None:
         with temporary_directory() as temp_dir:
             stdout = io.StringIO()
-            with contextlib.redirect_stdout(stdout):
+            with contextlib.redirect_stderr(stdout):
                 exit_code = main(
                     [
                         "127.0.0.1",
@@ -219,7 +256,7 @@ class CliTests(unittest.TestCase):
     def test_top_ports_without_value_uses_nmap_default_count(self) -> None:
         with temporary_directory() as temp_dir:
             stdout = io.StringIO()
-            with contextlib.redirect_stdout(stdout):
+            with contextlib.redirect_stderr(stdout):
                 exit_code = main(
                     [
                         "--top-ports",
@@ -237,7 +274,7 @@ class CliTests(unittest.TestCase):
     def test_top_ports_accepts_explicit_count(self) -> None:
         with temporary_directory() as temp_dir:
             stdout = io.StringIO()
-            with contextlib.redirect_stdout(stdout):
+            with contextlib.redirect_stderr(stdout):
                 exit_code = main(
                     [
                         "127.0.0.1",
@@ -256,7 +293,7 @@ class CliTests(unittest.TestCase):
     def test_dash_prefixed_nmap_args_do_not_break_nmap_args_option(self) -> None:
         with temporary_directory() as temp_dir:
             stdout = io.StringIO()
-            with contextlib.redirect_stdout(stdout):
+            with contextlib.redirect_stderr(stdout):
                 exit_code = main(
                     [
                         "127.0.0.1",
@@ -276,7 +313,7 @@ class CliTests(unittest.TestCase):
     def test_nmap_args_with_values_can_appear_before_target(self) -> None:
         with temporary_directory() as temp_dir:
             stdout = io.StringIO()
-            with contextlib.redirect_stdout(stdout):
+            with contextlib.redirect_stderr(stdout):
                 exit_code = main(
                     [
                         "--nmap-args",
@@ -335,7 +372,7 @@ class CliTests(unittest.TestCase):
     def test_raw_nmap_args_with_values_can_appear_before_target(self) -> None:
         with temporary_directory() as temp_dir:
             stdout = io.StringIO()
-            with contextlib.redirect_stdout(stdout):
+            with contextlib.redirect_stderr(stdout):
                 exit_code = main(
                     [
                         "--max-retries",
@@ -456,7 +493,7 @@ class CliTests(unittest.TestCase):
 
     def test_large_cidr_override_allows_dry_run(self) -> None:
         stdout = io.StringIO()
-        with contextlib.redirect_stdout(stdout):
+        with contextlib.redirect_stderr(stdout):
             exit_code = main(
                 [
                     "10.0.0.0/19",
@@ -489,7 +526,7 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertIn("DNS resolution failed for missing.example", stderr.getvalue())
-        self.assertIn("Resolved scan targets: 127.0.0.1", stdout.getvalue())
+        self.assertIn("Resolved scan targets: 127.0.0.1", stderr.getvalue())
 
     def test_missing_nmap_is_graceful_error_before_other_nmap_arg_validation(self) -> None:
         with temporary_directory() as temp_dir:
@@ -525,7 +562,7 @@ class CliTests(unittest.TestCase):
         )
 
         stdout = io.StringIO()
-        with contextlib.redirect_stdout(stdout):
+        with contextlib.redirect_stderr(stdout):
             print_unmatched_service(observed_service)
 
         output = stdout.getvalue()
@@ -535,7 +572,7 @@ class CliTests(unittest.TestCase):
     def test_no_udp_skips_udp_companion_scan(self) -> None:
         with temporary_directory() as temp_dir:
             stdout = io.StringIO()
-            with contextlib.redirect_stdout(stdout):
+            with contextlib.redirect_stderr(stdout):
                 exit_code = main(
                     [
                         "127.0.0.1",
@@ -554,7 +591,7 @@ class CliTests(unittest.TestCase):
     def test_discovery_dry_run_keeps_udp_companion_behavior(self) -> None:
         with temporary_directory() as temp_dir:
             stdout = io.StringIO()
-            with contextlib.redirect_stdout(stdout):
+            with contextlib.redirect_stderr(stdout):
                 exit_code = main(
                     [
                         "127.0.0.1",
@@ -595,6 +632,7 @@ class CliTests(unittest.TestCase):
 
         with temporary_directory() as temp_dir:
             stdout = io.StringIO()
+            stderr = io.StringIO()
             with patch("portweft.cli.ensure_nmap_available"):
                 with patch(
                     "portweft.cli.run_command",
@@ -608,7 +646,9 @@ class CliTests(unittest.TestCase):
                         ],
                     ):
                         with patch("portweft.cli.run_followups") as run_followups:
-                            with contextlib.redirect_stdout(stdout):
+                            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(
+                                stderr
+                            ):
                                 exit_code = main(
                                     [
                                         "192.0.2.10,192.0.2.11,192.0.2.12",
@@ -640,8 +680,7 @@ class CliTests(unittest.TestCase):
         self.assertTrue(
             all(call.kwargs["timeout_seconds"] == 7.0 for call in run_command.call_args_list)
         )
-        self.assertIn("continuing with other hosts", stdout.getvalue())
-        self.assertIn("no open TCP ports", stdout.getvalue())
+        self.assertIn("continuing with other hosts", stderr.getvalue())
         self.assertEqual(cumulative["scan_mode"], "discovery")
         by_address = {host["address"]: host for host in cumulative["hosts"]}
         self.assertEqual(by_address["192.0.2.10"]["services"][0]["port"], 22)
@@ -649,7 +688,7 @@ class CliTests(unittest.TestCase):
             by_address["192.0.2.11"]["services"][0]["product"],
             "nginx",
         )
-        self.assertEqual(by_address["192.0.2.12"]["services"], [])
+        self.assertNotIn("192.0.2.12", by_address)
         run_followups.assert_called_once()
 
     def test_impacket_missing_exits_before_scan(self) -> None:
@@ -678,6 +717,28 @@ class CliTests(unittest.TestCase):
         self.assertIn("Install with pip install .[impacket]", stderr.getvalue())
         run_command.assert_not_called()
 
+    def test_nuclei_missing_exits_before_scan(self) -> None:
+        with temporary_directory() as temp_dir:
+            stderr = io.StringIO()
+            with patch("portweft.cli.ensure_nmap_available"):
+                with patch(
+                    "portweft.nuclei_runner.resolve_executable",
+                    return_value=None,
+                ):
+                    with patch("portweft.cli.run_command") as run_command:
+                        with contextlib.redirect_stderr(stderr):
+                            exit_code = main(
+                                [
+                                    "127.0.0.1",
+                                    "--nuclei",
+                                    "--output-dir",
+                                    temp_dir,
+                                ]
+                            )
+        self.assertEqual(exit_code, 127)
+        self.assertIn("Nuclei was not found", stderr.getvalue())
+        run_command.assert_not_called()
+
     def test_json_flag_writes_json_reports_without_text_reports(self) -> None:
         host = HostObservation(
             address="192.0.2.10",
@@ -694,13 +755,17 @@ class CliTests(unittest.TestCase):
             ],
         )
         with temporary_directory() as temp_dir:
+            stdout = io.StringIO()
+            stderr = io.StringIO()
             with patch("portweft.cli.ensure_nmap_available"):
                 with patch(
                     "portweft.cli.run_command",
                     return_value=SimpleNamespace(ok=True, exit_code=0),
                 ):
                     with patch("portweft.cli.parse_nmap_xml", return_value=[host]):
-                        with contextlib.redirect_stdout(io.StringIO()):
+                        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(
+                            stderr
+                        ):
                             exit_code = main(
                                 [
                                     "192.0.2.10",
@@ -719,8 +784,15 @@ class CliTests(unittest.TestCase):
                 next(path for path in json_reports if path.name == "CUMULATIVE-report.json")
                 .read_text(encoding="utf-8")
             )
+            cumulative_text = next(
+                path for path in json_reports if path.name == "CUMULATIVE-report.json"
+            ).read_text(encoding="utf-8")
 
         self.assertEqual(exit_code, 0)
+        self.assertEqual(json.loads(stdout.getvalue()), cumulative)
+        self.assertEqual(stdout.getvalue(), cumulative_text)
+        self.assertNotIn("P O R T W E F T", stdout.getvalue())
+        self.assertIn("P O R T W E F T", stderr.getvalue())
         self.assertEqual(len(json_reports), 2)
         self.assertEqual(text_reports, [])
         self.assertEqual(cumulative["target"], "192.0.2.10")
@@ -732,6 +804,37 @@ class CliTests(unittest.TestCase):
             "not requested (--impacket not used)",
         )
         self.assertNotIn("scan_mode", cumulative)
+
+    def test_text_stdout_matches_saved_cumulative_report(self) -> None:
+        host = HostObservation(address="192.0.2.10", status="up")
+        with temporary_directory() as temp_dir:
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with patch("portweft.cli.ensure_nmap_available"):
+                with patch(
+                    "portweft.cli.run_command",
+                    return_value=SimpleNamespace(ok=True, exit_code=0),
+                ):
+                    with patch("portweft.cli.parse_nmap_xml", return_value=[host]):
+                        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(
+                            stderr
+                        ):
+                            exit_code = main(
+                                [
+                                    "192.0.2.10",
+                                    "--no-udp",
+                                    "--no-follow-up",
+                                    "--output-dir",
+                                    temp_dir,
+                                ]
+                            )
+            cumulative_path = next(
+                (Path(temp_dir) / "reports").glob("*/CUMULATIVE-report.txt")
+            )
+            cumulative = cumulative_path.read_text(encoding="utf-8")
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(stdout.getvalue(), cumulative)
+        self.assertIn("Initial Nmap scan starting", stderr.getvalue())
 
     def test_cleanup_failure_after_reports_does_not_fail_completed_scan(self) -> None:
         host = HostObservation(address="192.0.2.10", status="up")
@@ -762,7 +865,7 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertIn("Could not prepare output directory", stderr.getvalue())
-        self.assertIn("Temporary XML cleanup failed", stdout.getvalue())
+        self.assertIn("Temporary XML cleanup failed", stderr.getvalue())
 
     def test_prune_old_runs_keeps_newest_outputs(self) -> None:
         with temporary_directory() as temp_dir:
@@ -775,7 +878,7 @@ class CliTests(unittest.TestCase):
                 (scan_root / run_id).mkdir()
                 (report_root / f"{run_id}.txt").write_text("report", encoding="utf-8")
 
-            with contextlib.redirect_stdout(io.StringIO()):
+            with contextlib.redirect_stderr(io.StringIO()):
                 prune_old_runs(output_root, keep_runs=1)
 
             self.assertFalse((scan_root / "20260101-000000Z").exists())
@@ -796,7 +899,7 @@ class CliTests(unittest.TestCase):
                     encoding="utf-8",
                 )
 
-            with contextlib.redirect_stdout(io.StringIO()):
+            with contextlib.redirect_stderr(io.StringIO()):
                 prune_old_runs(output_root, keep_runs=1)
 
             self.assertFalse((report_root / "20260101-000000Z").exists())

@@ -9,6 +9,7 @@ from unittest.mock import patch
 from portweft.cli import main
 from portweft.models import HostObservation
 from portweft.targets import (
+    TargetResolution,
     annotate_hosts_with_targets,
     resolve_targets,
     scan_targets,
@@ -16,6 +17,29 @@ from portweft.targets import (
 
 
 class TargetResolutionTests(unittest.TestCase):
+    def test_discovered_ip_is_annotated_with_original_cidr(self) -> None:
+        hosts = [HostObservation(address="10.10.10.37")]
+        resolutions = [
+            TargetResolution(
+                original="10.10.10.0/24",
+                addresses=("10.10.10.0/24",),
+            )
+        ]
+
+        annotate_hosts_with_targets(hosts, resolutions)
+
+        self.assertEqual(hosts[0].original_target, "10.10.10.0/24")
+        self.assertEqual(hosts[0].resolved_ip, "10.10.10.37")
+
+    def test_cidr_annotation_does_not_iterate_network_members(self) -> None:
+        hosts = [HostObservation(address="10.200.1.2")]
+        resolutions = [
+            TargetResolution(original="10.0.0.0/8", addresses=("10.0.0.0/8",))
+        ]
+
+        annotate_hosts_with_targets(hosts, resolutions)
+
+        self.assertEqual(hosts[0].original_target, "10.0.0.0/8")
     def test_valid_domain_resolves_with_getaddrinfo(self) -> None:
         with patch(
             "portweft.targets.socket.getaddrinfo",
@@ -115,7 +139,7 @@ class TargetResolutionTests(unittest.TestCase):
         )
 
     def test_ipv6_domain_adds_ipv6_nmap_flag_in_dry_run(self) -> None:
-        stdout = io.StringIO()
+        stderr = io.StringIO()
         with patch(
             "portweft.targets.socket.getaddrinfo",
             return_value=[
@@ -128,12 +152,12 @@ class TargetResolutionTests(unittest.TestCase):
                 )
             ],
         ):
-            with contextlib.redirect_stdout(stdout):
+            with contextlib.redirect_stderr(stderr):
                 exit_code = main(["ipv6.example", "--dry-run", "--no-udp"])
 
         self.assertEqual(exit_code, 0)
-        self.assertIn("-6", stdout.getvalue())
-        self.assertIn("2001:db8::10", stdout.getvalue())
+        self.assertIn("-6", stderr.getvalue())
+        self.assertIn("2001:db8::10", stderr.getvalue())
 
 
 if __name__ == "__main__":

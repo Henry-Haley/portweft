@@ -9,13 +9,15 @@ stable exit code where possible.
 | Condition | Behavior |
 | --- | --- |
 | Nmap missing | Prints install/PATH guidance and exits `127`. |
+| Explicit RustScan or Masscan backend missing | Prints install/PATH guidance and exits `127`; auto mode falls back to Nmap. |
+| Nuclei requested but missing | Prints install/PATH guidance and exits `127` before scanning. |
 | Bad `--nmap-args` quoting | Prints the parse error and exits `2`. |
 | Bad passthrough timing/concurrency value | Prints the invalid option and exits `2`. |
 | User passes Nmap output flags | Prints a PortWeft XML ownership message and exits `2`. |
 | Target expansion exceeds `--max-scan-targets` | Prints the target estimate and exits `2`. |
 | Domain target cannot resolve | Prints a DNS error, skips that target, and continues. |
 | No targets remain after DNS resolution | Prints a controlled error and exits `2`. |
-| Scanner subprocess timeout | Stops the subprocess, prints a timeout error, and exits `124`. |
+| Required Nmap/discovery subprocess timeout | Stops the subprocess, prints a timeout error, and exits `124`. |
 | User presses Ctrl+C | Attempts to stop the active subprocess and exits `130`. |
 | Nmap rejects a user flag | Prints Nmap's own error and returns Nmap's exit code. |
 | Output directory cannot be created | Prints the path and OS error. |
@@ -25,6 +27,8 @@ stable exit code where possible.
 | Impacket package missing | Prints `Install with pip install .[impacket]` and exits before scanning. |
 | Impacket recon tool missing | Prints a skip message and continues. |
 | Impacket recon module fails | Prints the module output/error and continues. |
+| Nuclei times out or exits non-zero | Records a partial stage failure, preserves parsed findings, and still writes reports. |
+| Masscan lacks raw-socket privileges | Prints privilege guidance and stops the required discovery stage. |
 | Report cannot be written | Prints the report path and OS error. |
 
 ## Error Classes
@@ -39,6 +43,10 @@ NmapOutputConflictError
 NmapPassthroughError
 PortSpecError
 ImpacketUnavailableError
+ExternalToolNotFoundError
+RustScanNotFoundError
+MasscanNotFoundError
+NucleiNotFoundError
 TargetResolutionError
 OutputDirectoryError
 NmapXmlParseError
@@ -83,3 +91,10 @@ change the operator machine. Missing tools and non-zero module exits do not
 stop the PortWeft run once the Python package is available. Output is bounded
 before being printed or written to the report so a chatty module cannot consume
 unbounded memory.
+
+## Nuclei Error Output
+
+Nuclei is preflighted before an engagement scan when requested. Once Nmap data
+exists, a Nuclei timeout, malformed JSONL line, or non-zero exit is non-fatal:
+PortWeft attaches any valid findings already written, records `nuclei_status`
+as a partial failure, and renders the Nmap/Impacket results normally.

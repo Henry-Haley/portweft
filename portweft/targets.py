@@ -139,8 +139,33 @@ def annotate_hosts_with_targets(
 ) -> None:
     mapping = address_target_map(resolutions)
     for host in hosts:
-        original = mapping.get(host.address)
+        original = mapping.get(host.address) or containing_original_target(
+            host.address, resolutions
+        )
         if not original:
             continue
         host.original_target = original
         host.resolved_ip = host.address
+
+
+def containing_original_target(
+    address: str,
+    resolutions: list[TargetResolution],
+) -> str:
+    """Find the original CIDR containing an observed address without expanding it."""
+    try:
+        observed_ip = ipaddress.ip_address(address)
+    except ValueError:
+        return ""
+
+    for resolution in successful_resolutions(resolutions):
+        for candidate in resolution.addresses:
+            if "/" not in candidate:
+                continue
+            try:
+                network = ipaddress.ip_network(candidate, strict=False)
+            except ValueError:
+                continue
+            if observed_ip.version == network.version and observed_ip in network:
+                return resolution.original
+    return ""

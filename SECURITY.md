@@ -12,11 +12,14 @@ PortWeft is not intended to:
 - perform password spraying
 - bypass detection
 - deliver payloads
-- identify vulnerabilities or CVEs
+- aggregate vulnerability intelligence
 - provide attack recommendations
 
-It runs Nmap, parses XML, matches observed service facts to low-noise profiles,
-and writes reports.
+It runs scoped discovery, uses Nmap as the authoritative service source,
+matches observed facts to low-noise profiles, optionally performs allowlisted
+Impacket recon and CVE-tagged Nuclei validation, and writes reports. Nuclei
+checks are active even when limited to CVE tags; Masscan rates and all targets
+must remain within the approved rules of engagement.
 
 ## Reporting Security Issues
 

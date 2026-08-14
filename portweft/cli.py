@@ -20,6 +20,12 @@ from portweft.errors import (
     PortWeftError,
     TargetResolutionError,
 )
+from portweft.discovery_runner import (
+    hosts_from_discovery,
+    is_single_host,
+    run_discovery,
+    select_discovery_backend,
+)
 from portweft.impacket_runner import (
     DEFAULT_MAX_IMPACKET_OUTPUT_CHARS,
     ImpacketAvailability,
@@ -32,7 +38,6 @@ from portweft.matcher import evidence_summary, has_observable_evidence, match_pr
 from portweft.models import HostObservation, ServiceObservation
 from portweft.nmap_runner import (
     build_detailed_command,
-    build_discovery_command,
     build_followup_batch_command,
     build_initial_command,
     build_udp_command,
@@ -45,6 +50,7 @@ from portweft.nmap_runner import (
     udp_default_ports_text,
     validate_nmap_passthrough,
 )
+from portweft.nuclei_runner import ensure_nuclei_available, run_nuclei
 from portweft.nmap_xml import (
     DEFAULT_MAX_SCRIPT_OUTPUT_CHARS,
     merge_hosts,
@@ -99,6 +105,8 @@ PORTWEFT_OPTIONS = {
     "--keep-runs",
     "--max-script-output-chars",
     "--impacket",
+    "--nuclei",
+    "--full",
     "--max-impacket-output-chars",
     "--nmap-path",
     "--no-follow-up",
@@ -107,6 +115,12 @@ PORTWEFT_OPTIONS = {
     "--no-service-version",
     "--dry-run",
     "--discovery",
+    "--discovery-backend",
+    "--rustscan-path",
+    "--masscan-path",
+    "--masscan-rate",
+    "--nuclei-path",
+    "--stats-every",
     "--scan-timeout",
     "--max-scan-targets",
     "--allow-large-scan",
@@ -125,6 +139,12 @@ PORTWEFT_OPTIONS_WITH_VALUES = {
     "--nmap-args",
     "--scan-timeout",
     "--max-scan-targets",
+    "--discovery-backend",
+    "--rustscan-path",
+    "--masscan-path",
+    "--masscan-rate",
+    "--nuclei-path",
+    "--stats-every",
 }
 NMAP_OPTIONS_WITH_VALUES = {
     "-D",
@@ -173,8 +193,8 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description=(
             f"{PORTWEFT_BANNER}\n\n"
-            "Run Nmap, parse XML, and gather facts for open services. "
-            "Authorized use only."
+            "Run focused opening recon, consolidate observed facts, and stop "
+            "before exploitation. Authorized use only."
         ),
         epilog=(
             "Use PortWeft only on systems you own, administer, or have explicit "
@@ -202,12 +222,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-dir",
         default="output",
-        help="Directory for XML scan output and reports",
+        help="Directory for temporary scanner output and saved reports",
     )
     parser.add_argument(
         "--json",
         action="store_true",
-        help="Write JSON reports instead of text reports",
+        help="Render the STDOUT and saved reports as JSON",
     )
     parser.add_argument(
         "--resolve-mode",
@@ -266,7 +286,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Print planned Nmap commands without executing them",
+        help="Print planned stages to STDERR without scanning or writing files",
+    )
+    parser.add_argument(
+        "--nuclei",
+        action="store_true",
+        help="Run CVE-tagged Nuclei validation against observed TCP services",
+    )
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Enable --discovery, --impacket, and --nuclei",
     )
     parser.add_argument(
         "--discovery",
@@ -274,11 +304,44 @@ def build_parser() -> argparse.ArgumentParser:
         help="Discover all open TCP ports before per-host service enumeration",
     )
     parser.add_argument(
+        "--discovery-backend",
+        choices=("auto", "nmap", "rustscan", "masscan"),
+        default="auto",
+        help="TCP discovery backend (default: auto)",
+    )
+    parser.add_argument(
+        "--rustscan-path",
+        default="rustscan",
+        help="RustScan executable path or name on PATH",
+    )
+    parser.add_argument(
+        "--masscan-path",
+        default="masscan",
+        help="Masscan executable path or name on PATH",
+    )
+    parser.add_argument(
+        "--masscan-rate",
+        type=positive_int,
+        default=1000,
+        help="Masscan packets per second (default: 1000)",
+    )
+    parser.add_argument(
+        "--nuclei-path",
+        default="nuclei",
+        help="Nuclei executable path or name on PATH",
+    )
+    parser.add_argument(
+        "--stats-every",
+        type=nonnegative_float,
+        default=5.0,
+        help="Heartbeat interval in seconds; 0 disables it (default: 5)",
+    )
+    parser.add_argument(
         "--scan-timeout",
         type=nonnegative_float,
         default=DEFAULT_SCAN_TIMEOUT_SECONDS,
         help=(
-            "Maximum seconds per Nmap/Impacket command; 0 disables the PortWeft "
+            "Maximum seconds per external scanner command; 0 disables the PortWeft "
             f"timeout (default: {int(DEFAULT_SCAN_TIMEOUT_SECONDS)})"
         ),
     )
@@ -482,12 +545,25 @@ def validate_flag_conflicts(
     parsed: argparse.Namespace,
     argv: list[str],
 ) -> None:
+    if parsed.full and parsed.no_follow_up:
+        parser.error(
+            "--full requires service-aware follow-ups; remove --no-follow-up or "
+            "use explicit stage flags instead."
+        )
     if parsed.ports and parsed.top_ports:
         parser.error("Use either -p/--ports or --top-ports, not both.")
     if parsed.discovery and (parsed.ports or parsed.top_ports):
         parser.error("Use --discovery without -p/--ports or --top-ports.")
     if parsed.no_udp and option_was_supplied(argv, "--udp-ports"):
         parser.error("Use either --no-udp or --udp-ports, not both.")
+
+
+def apply_full_profile(parsed: argparse.Namespace) -> None:
+    if not parsed.full:
+        return
+    parsed.discovery = True
+    parsed.impacket = True
+    parsed.nuclei = True
 
 
 def validate_nmap_args_do_not_contain_portweft_options(args: list[str]) -> None:
@@ -543,6 +619,7 @@ def run(argv: list[str] | None = None) -> int:
     effective_argv = normalize_top_ports_flag(effective_argv)
     effective_argv, raw_nmap_args = extract_raw_nmap_args(effective_argv)
     parsed, unknown_nmap_args = parser.parse_known_args(effective_argv)
+    apply_full_profile(parsed)
     validate_flag_conflicts(parser, parsed, effective_argv)
     if parsed.keep_runs < 0:
         parser.error("--keep-runs must be zero or greater.")
@@ -587,10 +664,28 @@ def run(argv: list[str] | None = None) -> int:
     if has_ipv6_target(nmap_targets) and "-6" not in extra_nmap_args:
         extra_nmap_args = ["-6", *extra_nmap_args]
     report_targets = original_targets(resolutions)
+    if parsed.nuclei:
+        ensure_nuclei_available(parsed.nuclei_path, parsed.dry_run)
     if parsed.impacket and not parsed.no_follow_up and not parsed.dry_run:
         parsed.impacket_availability = require_impacket_package(
             parsed.max_impacket_output_chars
         )
+
+    discovery_backend = "not requested"
+    discovery_fallback = ""
+    if parsed.discovery:
+        discovery_backend = select_discovery_backend(
+            parsed.discovery_backend,
+            nmap_targets,
+            parsed.rustscan_path,
+            parsed.masscan_path,
+            parsed.dry_run,
+        )
+        if parsed.discovery_backend == "auto" and discovery_backend == "nmap":
+            preferred = "RustScan" if is_single_host(nmap_targets) else "Masscan"
+            discovery_fallback = (
+                f"{preferred} is unavailable; auto discovery falling back to Nmap"
+            )
 
     scan_started_at = dt.datetime.now(dt.timezone.utc)
     output_root = Path(parsed.output_dir)
@@ -601,33 +696,65 @@ def run(argv: list[str] | None = None) -> int:
     initial_xml = scan_dir / f"{run_id}-initial.xml"
     udp_xml = scan_dir / f"{run_id}-udp.xml"
 
-    print(PORTWEFT_BANNER, flush=True)
+    print(PORTWEFT_BANNER, file=sys.stderr, flush=True)
     print_step(f"{APP_NAME} run {run_id} starting")
     print_step(f"Scan started (GMT): {scan_started_at.strftime('%Y-%m-%d %H:%M:%S GMT')}")
     print_step(f"Targets: {', '.join(report_targets)}")
     print_step(f"Resolved scan targets: {', '.join(nmap_targets)}")
+    if parsed.discovery:
+        if discovery_fallback:
+            print_step(discovery_fallback)
+        print_step(f"Discovery backend: {discovery_backend}")
 
     if not parsed.dry_run:
         prepare_output_dirs(scan_dir, report_dir)
     timeout_seconds = command_timeout(parsed)
 
-    initial_builder = build_discovery_command if parsed.discovery else build_initial_command
-    initial_label = "TCP discovery scan" if parsed.discovery else "Initial Nmap scan"
-    initial_command = initial_builder(
-        parsed,
-        nmap_targets,
-        initial_xml,
-        extra_nmap_args,
-    )
-    print_step(f"{initial_label} starting")
-    initial_result = run_command(
-        initial_command,
-        parsed.dry_run,
-        timeout_seconds=timeout_seconds,
-    )
-    if not initial_result.ok:
-        return initial_result.exit_code
-    print_section_done(initial_label, f"XML saved to {initial_xml}")
+    discovery_result = None
+    if parsed.discovery:
+        discovery_output = (
+            initial_xml
+            if discovery_backend == "nmap"
+            else scan_dir / f"{run_id}-discovery.list"
+        )
+        print_step(f"TCP discovery scan starting ({discovery_backend})")
+        discovery_result = run_discovery(
+            parsed,
+            discovery_backend,
+            nmap_targets,
+            discovery_output,
+            extra_nmap_args,
+            timeout_seconds,
+            run_command,
+            parse_nmap_xml,
+        )
+        if discovery_result.exit_code:
+            return discovery_result.exit_code
+        if discovery_result.backend != discovery_backend:
+            discovery_backend = discovery_result.backend
+            print_step(f"Discovery backend changed to: {discovery_backend}")
+        port_count = sum(len(ports) for ports in discovery_result.open_tcp_ports.values())
+        detail = "planned" if parsed.dry_run else f"{port_count} TCP port(s)"
+        print_section_done("TCP discovery scan", detail)
+    else:
+        initial_label = "Initial Nmap scan"
+        initial_command = build_initial_command(
+            parsed,
+            nmap_targets,
+            initial_xml,
+            extra_nmap_args,
+        )
+        print_step(f"{initial_label} starting")
+        initial_result = run_command(
+            initial_command,
+            parsed.dry_run,
+            timeout_seconds=timeout_seconds,
+            stats_every=parsed.stats_every,
+            stage="initial nmap scan",
+        )
+        if not initial_result.ok:
+            return initial_result.exit_code
+        print_section_done(initial_label, f"XML saved to {initial_xml}")
 
     udp_result = None
     if udp_skip_detail:
@@ -639,6 +766,8 @@ def run(argv: list[str] | None = None) -> int:
             udp_command,
             parsed.dry_run,
             timeout_seconds=timeout_seconds,
+            stats_every=parsed.stats_every,
+            stage="UDP companion nmap scan",
         )
         if udp_result.ok:
             print_section_done("UDP companion scan", f"XML saved to {udp_xml}")
@@ -651,13 +780,28 @@ def run(argv: list[str] | None = None) -> int:
                 "Detailed service enumeration",
                 "planned per host after discovery results are available",
             )
+        if parsed.no_follow_up:
+            print_section_done("Follow-up scans", "skipped by --no-follow-up")
+        else:
+            print_section_done(
+                "Follow-up scans",
+                "planned after service identification",
+            )
+        if parsed.impacket:
+            print_section_done("Impacket recon", "planned after service identification")
+        if parsed.nuclei:
+            print_section_done("Nuclei CVE-only validation", "planned")
         print_section_done("Dry run", "no files written")
         return 0
 
-    print_step(f"Parsing initial XML: {initial_xml}")
-    hosts = parse_nmap_xml(initial_xml, parsed.max_script_output_chars)
+    if discovery_result is not None:
+        hosts = hosts_from_discovery(discovery_result)
+    else:
+        print_step(f"Parsing initial XML: {initial_xml}")
+        hosts = parse_nmap_xml(initial_xml, parsed.max_script_output_chars)
     annotate_hosts_with_targets(hosts, resolutions)
-    print_section_done("Initial XML parse")
+    if discovery_result is None:
+        print_section_done("Initial XML parse")
 
     if parsed.discovery:
         run_discovery_enumeration(
@@ -705,6 +849,25 @@ def run(argv: list[str] | None = None) -> int:
         if parsed.impacket:
             impacket_status = run_impacket_recon(parsed, hosts, timeout_seconds)
 
+    nuclei_status = "not requested (--nuclei not used)"
+    if parsed.nuclei:
+        print_step("Nuclei CVE-only validation starting")
+        nuclei_status, finding_count = run_nuclei(
+            parsed.nuclei_path,
+            hosts,
+            scan_dir,
+            timeout_seconds,
+            parsed.stats_every,
+        )
+        print_section_done(
+            "Nuclei CVE-only validation",
+            f"{finding_count} finding(s); {nuclei_status}",
+        )
+
+    discovery_status = (
+        discovery_result.status if discovery_result is not None else "not requested"
+    )
+
     print_step(f"Writing reports: {report_dir}")
     if parsed.json:
         written_reports = write_json_reports(
@@ -714,6 +877,9 @@ def run(argv: list[str] | None = None) -> int:
             hosts,
             impacket_status,
             discovery_mode=parsed.discovery,
+            discovery_backend=discovery_backend,
+            discovery_status=discovery_status,
+            nuclei_status=nuclei_status,
         )
     else:
         written_reports = write_reports(
@@ -723,8 +889,15 @@ def run(argv: list[str] | None = None) -> int:
             hosts,
             impacket_status,
             discovery_mode=parsed.discovery,
+            discovery_backend=discovery_backend,
+            discovery_status=discovery_status,
+            nuclei_status=nuclei_status,
         )
     print_section_done("Report writing", f"{len(written_reports)} file(s) in {report_dir}")
+    try:
+        cumulative_output = written_reports[0].read_text(encoding="utf-8")
+    except OSError as error:
+        raise OutputDirectoryError(str(written_reports[0]), str(error)) from error
     try:
         cleanup_scan_outputs(scan_dir)
     except OutputDirectoryError as error:
@@ -732,6 +905,8 @@ def run(argv: list[str] | None = None) -> int:
         print_step("Temporary XML cleanup failed; reports were kept")
     prune_old_runs(output_root, parsed.keep_runs)
     print_section_done(f"{APP_NAME} run")
+    sys.stdout.write(cumulative_output)
+    sys.stdout.flush()
     return 0
 
 
@@ -825,6 +1000,8 @@ def run_discovery_enumeration(
             ),
             parsed.dry_run,
             timeout_seconds=timeout_seconds,
+            stats_every=parsed.stats_every,
+            stage=f"nmap enumeration {host.address}:{port_text}",
         )
         if not result.ok:
             print_step(
@@ -888,6 +1065,8 @@ def run_followups(
             command,
             parsed.dry_run,
             timeout_seconds=timeout_seconds,
+            stats_every=parsed.stats_every,
+            stage=f"nmap follow-up {profile} {host}:{port_text}/{protocol}",
         )
         if not followup_result.ok:
             print_step(f"Follow-up profile failed: {profile} {host}:{port_text}/{protocol}")
@@ -950,11 +1129,15 @@ def run_impacket_recon(
     for service, module_name in planned:
         target = f"{service.host}:{service.port}/{service.protocol}"
         print_step(f"Impacket {module_name} starting for {target}")
+        runner_options = {}
+        if stats_every := getattr(parsed, "stats_every", 0):
+            runner_options["stats_every"] = stats_every
         result = run_impacket_module(
             module_name,
             service,
             parsed.max_impacket_output_chars,
             timeout_seconds,
+            **runner_options,
         )
         if result.skipped:
             print_step(f"Impacket {module_name} skipped for {target}: {result.reason}")

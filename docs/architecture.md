@@ -1,25 +1,34 @@
 # Architecture
 
-PortWeft is intentionally small and standard-library only. Nmap is the only
-external runtime dependency.
+PortWeft is intentionally small and standard-library only. Nmap is required;
+RustScan, Masscan, Impacket, and Nuclei are optional external tools.
 
 ## Flow
 
 ```text
-CLI arguments
-  -> target parsing
-  -> DNS resolution for domain targets
-  -> initial TCP Nmap scan
-  -> UDP companion Nmap scan unless disabled
-  -> XML parsing
-  -> banner-first profile matching
-  -> batched service-specific follow-up scans
-  -> optional allowlisted Impacket recon
-  -> merged host/service observations
-  -> terminal progress output
-  -> per-host and cumulative text or JSON reports
-  -> temporary XML cleanup
+targets
+   |
+discovery backend
+  / | \
+rust masscan nmap
+   |
+normalized open-port map
+   |
+targeted Nmap XML enumeration
+   |
+service-aware follow-ups
+  / \
+Impacket Nuclei (CVE only)
+  \ /
+normalized HostObservation/report data
+   |
+STDOUT + saved cumulative/per-host reports
 ```
+
+Without `--discovery`, the ordinary initial Nmap workflow remains in place.
+The small UDP companion scan is independent and remains enabled unless
+`--no-udp` is used. Progress and errors go to STDERR; only the final cumulative
+document goes to STDOUT.
 
 ## Modules
 
@@ -34,7 +43,12 @@ portweft/cli.py
   Argument parsing and the main workflow.
 
 portweft/models.py
-  HostObservation and ServiceObservation dataclasses.
+  DiscoveryResult, HostObservation, ServiceObservation, and NucleiFinding
+  dataclasses.
+
+portweft/discovery_runner.py
+  Backend selection, RustScan greppable parsing, Masscan list parsing, and the
+  normalized per-host open TCP port map.
 
 portweft/nmap_runner.py
   Nmap command construction, passthrough validation, executable discovery,
@@ -44,6 +58,13 @@ portweft/nmap_runner.py
 portweft/impacket_runner.py
   Optional lazy Impacket package import, recon module allowlist, executable
   discovery, bounded subprocess output capture, and command construction.
+
+portweft/nuclei_runner.py
+  Nmap-enriched target construction, CVE-only command construction, streaming
+  JSONL parsing, finding deduplication, and host attachment.
+
+portweft/process_runner.py
+  Shared subprocess timeout, Ctrl+C termination, and periodic heartbeat waits.
 
 portweft/nmap_xml.py
   Streaming Nmap XML parsing, OS inference, bounded script-output extraction,
@@ -57,7 +78,8 @@ portweft/matcher.py
   Banner-first service-to-profile matching.
 
 portweft/reporting.py
-  Streaming per-host and cumulative text/JSON report generation.
+  Per-host and cumulative text/JSON rendering, including structured Nuclei
+  findings.
 
 portweft/targets.py
   Domain resolution, scan target expansion, and original-target host annotation.
@@ -89,13 +111,16 @@ a progress message and keeps the service in the final report.
 
 ## Result Merging
 
-The initial TCP XML is parsed first. If the UDP companion scan succeeds, its XML
-is parsed and merged into the same host list. Follow-up scans then merge script
-output, optional Impacket recon output, updated product/version fields, and new
-services back into the existing host observations.
+Discovery backends produce only a normalized address-to-TCP-ports map. Each
+address with discovered ports then receives a targeted Nmap service scan, and
+Nmap XML remains the authoritative structured service source. UDP and Nmap
+follow-up XML are merged into the same host list. Impacket results remain on
+compatible services; Nuclei findings are first-class host data because a
+finding may identify an endpoint differently from Nmap.
 
-Domain names are resolved before Nmap runs. Nmap receives resolved IP addresses,
-while parsed hosts are annotated with the original input target for reports.
+Domain names are resolved before scanning. CIDR attribution uses `ipaddress`
+membership checks, so individual discovered addresses retain their original
+network target without expanding the network in memory.
 
 The merge key for services is:
 

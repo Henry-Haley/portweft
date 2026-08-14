@@ -6,12 +6,14 @@ fact collection.
 ## What PortWeft Does
 
 - Runs Nmap scans.
+- Optionally runs RustScan or Masscan for TCP port discovery.
 - Resolves domain targets to IP addresses before scanning.
 - Uses temporary Nmap XML for parsing.
 - Parses open services, banners, versions, and script output.
 - Matches services to low-noise follow-up profiles.
 - Optionally runs allowlisted Impacket recon modules when `--impacket` is set.
-- Prints progress to screen.
+- Optionally runs Nuclei with CVE-tagged templates when `--nuclei` is set.
+- Prints progress to STDERR and the final cumulative report to STDOUT.
 - Writes per-host and cumulative text or JSON reports.
 
 ## What PortWeft Does Not Do
@@ -19,11 +21,26 @@ fact collection.
 - Exploit services.
 - Brute force credentials.
 - Perform password spraying.
-- Look up CVEs.
-- Decide that a version is vulnerable.
+- Aggregate passive vulnerability intelligence.
+- Claim a service is exploitable from version text alone.
 - Run intrusive NSE scripts by default.
 - Run Impacket exploitation, relay, dumping, or brute-force tooling.
 - Perform internet enrichment lookups beyond DNS resolution.
+- Run Nuclei exposures, misconfiguration, technology-only, fuzzing, AI, code,
+  or headless scan modes.
+
+## Fast TCP Discovery
+
+`--discovery` scans TCP ports `1-65535`, then sends only discovered ports to
+Nmap for service identification. `--discovery-backend auto` prefers RustScan
+for one resolved host and Masscan for multiple hosts or a network when those
+tools are available, with Nmap as the required fallback.
+
+Masscan uses raw packets and can generate substantial traffic. Its default is a
+conservative `--masscan-rate 1000`; increase that value only when the approved
+scope and network can tolerate it. Masscan may require elevated or raw-socket
+privileges. Existing `--max-scan-targets` and `--allow-large-scan` protections
+apply regardless of backend.
 
 ## Default TCP Behavior
 
@@ -98,8 +115,8 @@ different privileges or flags.
 
 ## Runtime Guardrails
 
-PortWeft applies a default timeout to each Nmap or Impacket subprocess. Operators
-can tune it with `--scan-timeout`, or set `--scan-timeout 0` to disable the
+PortWeft applies a default timeout to each scanner subprocess. Operators can
+tune it with `--scan-timeout`, or set `--scan-timeout 0` to disable the
 PortWeft-managed timeout when a long-running authorized scan requires it.
 
 Large target expansions are blocked by default. Use `--allow-large-scan` only
@@ -107,6 +124,9 @@ when the larger range is explicitly in scope.
 
 Ctrl+C exits cleanly with code `130` and attempts to stop the active scanner
 subprocess.
+
+Long-running external stages emit a small STDERR heartbeat every five seconds
+by default. Use `--stats-every 0` to disable it.
 
 ## Optional Impacket Recon
 
@@ -128,11 +148,26 @@ credential dumping, password guessing, SID brute forcing, or vulnerability
 checks. If a required command is not available, PortWeft prints a skip message
 and continues.
 
+## Optional Nuclei CVE Validation
+
+Nuclei is disabled by default and must be installed separately. PortWeft builds
+one unique target list from Nmap-enriched TCP services, invokes Nuclei with
+`-tags cve`, and consumes JSONL. UDP is excluded. PortWeft does not enable
+automatic scan selection, headless, code, fuzzing, AI, exposure,
+misconfiguration, or technology-only modes.
+
+CVE-only filtering does not make Nuclei passive: templates can send active
+validation requests. Use `--nuclei` only when those checks are explicitly in
+scope. A Nuclei timeout or non-zero exit is reported as a partial stage failure
+and does not discard valid Nmap or Impacket results.
+
 ## Safe Operating Practices
 
 - Use `--dry-run` before scanning unfamiliar ranges.
 - Use `--no-udp` when UDP is outside scope.
 - Use `--impacket` only when SMB/RPC enumeration is in scope.
+- Use `--nuclei` only when active CVE validation is in scope.
+- Keep `--masscan-rate` conservative unless a higher rate is approved.
 - Use `-p` or `--top-ports` to keep scan scope explicit.
 - Use `--allow-large-scan` only for approved large ranges.
 - Keep Nmap timing flags appropriate for the environment.

@@ -7,7 +7,7 @@ to run it quickly. Everything else lives here.
 ## Contents
 
 - [Usage](usage.md): target formats, ports, Nmap passthrough, JSON reports,
-  Impacket recon, output files, and run examples.
+  discovery backends, Impacket/Nuclei recon, output files, and run examples.
 - [Architecture](architecture.md): workflow, modules, report generation, and
   error handling structure.
 - [First Release Scope](scope.md): what v1.0 is meant to include and exclude.
@@ -20,11 +20,11 @@ to run it quickly. Everything else lives here.
 
 ## Project Intent
 
-PortWeft is a lightweight Nmap XML orchestration tool for authorized service
-reconnaissance. It gathers service facts and organizes them. Optional Impacket
-support is limited to allowlisted recon modules. PortWeft does not identify
-vulnerabilities, check CVEs, brute force credentials, exploit services, or
-provide attack recommendations.
+PortWeft is a lightweight opening-recon orchestrator for authorized
+assessments. It combines fast TCP discovery, targeted Nmap XML enumeration,
+focused service-aware follow-ups, optional allowlisted Impacket recon, and
+optional CVE-tagged Nuclei validation. It does not automate exploitation,
+credential attacks, brute force, or arbitrary pentest-tool chains.
 
 ## Quick Links
 

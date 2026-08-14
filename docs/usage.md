@@ -7,6 +7,9 @@ runtime target.
 
 - Python 3.10+
 - Nmap available on `PATH`
+- Optional: RustScan for fast single-host TCP discovery
+- Optional: Masscan for broad/multi-host TCP discovery
+- Optional: Nuclei and its templates for CVE-only validation
 - Optional: Impacket for `--impacket` recon modules
 
 No Python packages are required for normal use. Impacket is only needed when
@@ -52,6 +55,19 @@ The legacy root launcher also works:
 ```bash
 python3 portweft.py 192.0.2.10
 ```
+
+## Full Opening Recon
+
+The convenience profile enables full TCP discovery, existing service-aware
+Nmap follow-ups, allowlisted Impacket recon, and CVE-only Nuclei validation:
+
+```bash
+portweft 192.0.2.10 --full
+```
+
+It is equivalent to `--discovery --impacket --nuclei`. It does not change UDP
+defaults, target-count safety limits, or raw Nmap passthrough behavior.
+`--full --no-follow-up` is rejected because it contradicts the profile.
 
 ## Target Formats
 
@@ -127,12 +143,32 @@ separately for only the ports found on each host:
 python3 -m portweft 192.0.2.10 --discovery
 ```
 
-The discovery pass omits service detection, `-A`, and NSE. By default, each
-responding host with open TCP ports then gets its own explicit
-`-sV --version-light` and `banner` scan before the normal profile follow-ups.
-Hosts with no open ports or a failed detailed scan do not stop other hosts. UDP
-companion scanning is unchanged. `--discovery` cannot be combined with
-`-p/--ports` or `--top-ports`.
+Discovery produces a normalized per-host port map. Each host with open TCP
+ports then gets its own explicit `-sV --version-light` and `banner` Nmap scan
+against only those ports before normal profile follow-ups. Hosts with a failed
+detailed scan do not stop other hosts. UDP companion scanning is unchanged.
+`--discovery` cannot be combined with `-p/--ports` or `--top-ports`.
+
+Backend selection defaults to `auto`:
+
+- one resolved host: RustScan when available, otherwise Nmap
+- multiple resolved hosts or a network: Masscan when available, otherwise Nmap
+
+Choose explicitly:
+
+```bash
+portweft 192.0.2.10 --discovery --discovery-backend rustscan
+portweft 192.0.2.0/24 --discovery --discovery-backend masscan
+portweft 192.0.2.10 --discovery --discovery-backend nmap
+```
+
+Explicitly selected missing tools cause a controlled error; only `auto` falls
+back. Override executable paths with `--rustscan-path` or `--masscan-path`.
+Masscan defaults to 1000 packets/second:
+
+```bash
+portweft 192.0.2.0/24 --discovery --discovery-backend masscan --masscan-rate 2000
+```
 
 ## Nmap Passthrough
 
@@ -195,8 +231,9 @@ Preview commands without scanning:
 python3 -m portweft 192.0.2.10 -p 22,80,443 --dry-run -- -T4 -Pn
 ```
 
-Dry-run mode prints the exact Nmap commands that would be executed and does not
-write output files.
+Dry-run mode prints planned discovery and known Nmap commands to STDERR, notes
+the downstream Nmap/Impacket/Nuclei stages whose targets are not known yet, and
+does not write output files.
 
 ## JSON Reports
 
@@ -206,9 +243,17 @@ Write structured JSON reports instead of formatted text:
 python3 -m portweft 192.0.2.10 --json
 ```
 
+STDOUT contains one valid JSON document and operational progress stays on
+STDERR, so piping is safe:
+
+```bash
+portweft 192.0.2.10 --full --json | jq .
+```
+
 JSON reports include targets, DNS resolution details, host information,
 services, matched profiles, NSE results, and Impacket results when present.
-The report files contain only JSON data.
+They also include structured Nuclei findings and high-level stage statuses. The
+report files and STDOUT contain only JSON data.
 
 ## Optional Impacket Recon
 
@@ -243,6 +288,24 @@ Limit retained Impacket output per module:
 python3 -m portweft 192.0.2.10 --impacket --max-impacket-output-chars 4096
 ```
 
+## Optional Nuclei CVE Validation
+
+Run one Nuclei process against unique targets constructed from Nmap-enriched TCP
+services:
+
+```bash
+portweft 192.0.2.10 --nuclei
+portweft 192.0.2.10 --discovery --nuclei
+```
+
+PortWeft always supplies `-tags cve` and JSONL output controls. It does not
+enable automatic scan selection, exposure/misconfiguration/technology scans,
+fuzzing, AI, code, or headless modes. HTTP services become explicit URLs with
+their observed ports; other TCP services use host/port targets; UDP is excluded.
+Use `--nuclei-path` for a non-default executable. Missing Nuclei fails preflight;
+a later timeout or non-zero exit is recorded as a partial stage failure and
+does not discard the other results.
+
 ## Output Retention
 
 Keep only the newest completed output runs:
@@ -255,13 +318,21 @@ The default is `0`, which keeps all existing output.
 
 ## Scan Limits
 
-Each Nmap or Impacket command has a PortWeft timeout by default:
+Each external scanner command has a PortWeft timeout by default:
 
 ```bash
 python3 -m portweft 192.0.2.10 --scan-timeout 900
 ```
 
 Use `--scan-timeout 0` to disable the PortWeft-managed subprocess timeout.
+
+Long stages emit an elapsed heartbeat to STDERR every five seconds. Change or
+disable it with:
+
+```bash
+portweft 192.0.2.10 --full --stats-every 10
+portweft 192.0.2.10 --full --stats-every 0
+```
 
 PortWeft blocks large target expansions by default. Use an explicit override
 when the range is in scope:
@@ -326,7 +397,9 @@ temporary XML was removed, but do not reference deleted XML paths. Each
 responding host gets one report named after the host address, and
 `CUMULATIVE-report.txt` contains all responding hosts from the run. The report
 keeps Nmap open-port and NSE output separate from the `IMPACKET RESULTS:`
-section. If `--impacket` was not used, that section explicitly reports
+and `NUCLEI CVE RESULTS:` sections. The cumulative file is also printed
+byte-for-byte to STDOUT after completion; status, commands, warnings, and errors
+go to STDERR. If `--impacket` was not used, that section explicitly reports
 `Status: not requested (--impacket not used)`. Reruns create a new timestamped
 report directory instead of overwriting existing host reports. If temporary
 XML cleanup fails after reports are written, PortWeft warns but keeps the run

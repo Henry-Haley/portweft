@@ -37,7 +37,18 @@ def now_slug() -> str:
 
 def print_step(message: str) -> None:
     timestamp = dt.datetime.now().strftime("%H:%M:%S")
-    print(f"[{timestamp}] {sanitize_text(message)}", flush=True)
+    print(f"[{timestamp}] {sanitize_text(message)}", file=sys.stderr, flush=True)
+
+
+def print_elapsed_step(elapsed_seconds: float, message: str) -> None:
+    elapsed = max(0, int(elapsed_seconds))
+    hours, remainder = divmod(elapsed, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    print(
+        f"[{hours:02d}:{minutes:02d}:{seconds:02d}] {sanitize_text(message)}",
+        file=sys.stderr,
+        flush=True,
+    )
 
 
 def print_error(message: str) -> None:

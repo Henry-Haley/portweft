@@ -10,15 +10,17 @@ import threading
 from typing import TextIO
 
 from portweft.models import ServiceObservation
+from portweft.process_runner import (
+    COMMAND_TIMEOUT_EXIT_CODE,
+    close_process_streams,
+    wait_for_process,
+)
 from portweft.profiles import SERVICE_PROFILES
 from portweft.utils import print_error, print_step, quote_command
 
 
 DEFAULT_MAX_IMPACKET_OUTPUT_CHARS = 8192
 IMPACKET_INSTALL_HINT = "Install with pip install .[impacket]"
-COMMAND_TIMEOUT_EXIT_CODE = 124
-
-
 @dataclass(frozen=True, slots=True)
 class ImpacketModule:
     name: str
@@ -145,6 +147,7 @@ def run_impacket_module(
     service: ServiceObservation,
     max_output_chars: int = DEFAULT_MAX_IMPACKET_OUTPUT_CHARS,
     timeout_seconds: float | None = None,
+    stats_every: float = 0,
 ) -> ImpacketResult:
     if not module_supports_service(module_name, service):
         return ImpacketResult(
@@ -164,7 +167,13 @@ def run_impacket_module(
         )
 
     command = build_impacket_command(module_name, executable, service)
-    return run_impacket_command(module_name, command, max_output_chars, timeout_seconds)
+    return run_impacket_command(
+        module_name,
+        command,
+        max_output_chars,
+        timeout_seconds,
+        stats_every,
+    )
 
 
 def run_impacket_command(
@@ -172,10 +181,17 @@ def run_impacket_command(
     command: list[str],
     max_output_chars: int = DEFAULT_MAX_IMPACKET_OUTPUT_CHARS,
     timeout_seconds: float | None = None,
+    stats_every: float = 0,
 ) -> ImpacketResult:
     print_step(quote_command(command))
     try:
-        completed = run_bounded_process(command, max_output_chars, timeout_seconds)
+        completed = run_bounded_process(
+            command,
+            max_output_chars,
+            timeout_seconds,
+            stats_every,
+            f"impacket {module_name}",
+        )
     except FileNotFoundError:
         return ImpacketResult(
             module_name=module_name,
@@ -203,6 +219,8 @@ def run_bounded_process(
     command: list[str],
     max_output_chars: int,
     timeout_seconds: float | None = None,
+    stats_every: float = 0,
+    stage: str = "impacket",
 ) -> ProcessResult:
     process = subprocess.Popen(
         command,
@@ -224,14 +242,12 @@ def run_bounded_process(
     )
     stdout_reader.start()
     stderr_reader.start()
-    try:
-        exit_code = process.wait(timeout=timeout_seconds)
-    except subprocess.TimeoutExpired:
-        terminate_process(process)
-        exit_code = COMMAND_TIMEOUT_EXIT_CODE
-    except KeyboardInterrupt:
-        terminate_process(process)
-        raise
+    exit_code, _timed_out = wait_for_process(
+        process,
+        timeout_seconds,
+        stats_every,
+        stage,
+    )
     stdout_reader.join()
     stderr_reader.join()
     close_process_streams(process)
@@ -240,27 +256,6 @@ def run_bounded_process(
         stdout=stdout_parts[0] if stdout_parts else "",
         stderr=stderr_parts[0] if stderr_parts else "",
     )
-
-
-def terminate_process(process: subprocess.Popen) -> None:
-    try:
-        process.terminate()
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=5)
-    except OSError:
-        pass
-
-
-def close_process_streams(process: subprocess.Popen) -> None:
-    for stream in (process.stdout, process.stderr):
-        if stream is None:
-            continue
-        try:
-            stream.close()
-        except OSError:
-            pass
 
 
 def process_output(

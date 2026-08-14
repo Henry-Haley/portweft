@@ -21,6 +21,11 @@ from portweft.errors import (
     PortSpecError,
 )
 from portweft.models import ServiceObservation
+from portweft.process_runner import (
+    COMMAND_TIMEOUT_EXIT_CODE,
+    close_process_streams,
+    wait_for_process,
+)
 from portweft.profiles import SERVICE_PROFILES, UDP_DEFAULT_PORTS
 from portweft.utils import print_error, print_step, quote_command
 
@@ -70,8 +75,6 @@ WINDOWS_NMAP_CANDIDATES = (
 
 BANNER_SCRIPT = "banner"
 MAX_PORT = 65535
-COMMAND_TIMEOUT_EXIT_CODE = 124
-
 DISCOVERY_INCOMPATIBLE_FLAGS = {
     "-A",
     "-F",
@@ -532,6 +535,8 @@ def run_command(
     dry_run: bool,
     timeout_seconds: float | None = None,
     max_output_lines: int = 12,
+    stats_every: float = 0,
+    stage: str = "nmap",
 ) -> CommandResult:
     print_step(quote_command(command))
     if dry_run:
@@ -563,16 +568,12 @@ def run_command(
     )
     stdout_reader.start()
     stderr_reader.start()
-    timed_out = False
-    try:
-        exit_code = process.wait(timeout=timeout_seconds)
-    except subprocess.TimeoutExpired:
-        timed_out = True
-        terminate_process(process)
-        exit_code = COMMAND_TIMEOUT_EXIT_CODE
-    except KeyboardInterrupt:
-        terminate_process(process)
-        raise
+    exit_code, timed_out = wait_for_process(
+        process,
+        timeout_seconds,
+        stats_every,
+        stage,
+    )
     stdout_reader.join()
     stderr_reader.join()
     close_process_streams(process)
@@ -587,27 +588,6 @@ def run_command(
     if not result.ok:
         print_nmap_failure(result)
     return result
-
-
-def terminate_process(process: subprocess.Popen) -> None:
-    try:
-        process.terminate()
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=5)
-    except OSError:
-        pass
-
-
-def close_process_streams(process: subprocess.Popen) -> None:
-    for stream in (process.stdout, process.stderr):
-        if stream is None:
-            continue
-        try:
-            stream.close()
-        except OSError:
-            pass
 
 
 def format_timeout(timeout_seconds: float | None) -> str:

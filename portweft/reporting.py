@@ -11,7 +11,7 @@ from pathlib import Path
 from portweft import APP_NAME
 from portweft.errors import ReportWriteError
 from portweft.matcher import match_profiles
-from portweft.models import HostObservation, ServiceObservation
+from portweft.models import HostObservation, NucleiFinding, ServiceObservation
 from portweft.targets import TargetResolution, successful_resolutions
 from portweft.utils import safe_name, sanitize_text
 
@@ -28,6 +28,9 @@ def write_reports(
     hosts: list[HostObservation],
     impacket_status: str = "not requested (--impacket not used)",
     discovery_mode: bool = False,
+    discovery_backend: str = "not requested",
+    discovery_status: str = "not requested",
+    nuclei_status: str = "not requested (--nuclei not used)",
 ) -> list[Path]:
     """Write one cumulative report and one report for each responding host."""
     report_hosts = reportable_hosts(hosts)
@@ -41,7 +44,14 @@ def write_reports(
     write_lines(
         cumulative_path,
         report_lines(
-            targets, scan_started_at, report_hosts, impacket_status, discovery_mode
+            targets,
+            scan_started_at,
+            report_hosts,
+            impacket_status,
+            discovery_mode,
+            discovery_backend,
+            discovery_status,
+            nuclei_status,
         ),
     )
     written.append(cumulative_path)
@@ -51,7 +61,14 @@ def write_reports(
         write_lines(
             host_path,
             report_lines(
-                targets, scan_started_at, [host], impacket_status, discovery_mode
+                targets,
+                scan_started_at,
+                [host],
+                impacket_status,
+                discovery_mode,
+                discovery_backend,
+                discovery_status,
+                nuclei_status,
             ),
         )
         written.append(host_path)
@@ -66,6 +83,9 @@ def write_json_reports(
     hosts: list[HostObservation],
     impacket_status: str = "not requested (--impacket not used)",
     discovery_mode: bool = False,
+    discovery_backend: str = "not requested",
+    discovery_status: str = "not requested",
+    nuclei_status: str = "not requested (--nuclei not used)",
 ) -> list[Path]:
     """Write parseable JSON reports instead of formatted text reports."""
     report_hosts = reportable_hosts(hosts)
@@ -91,6 +111,9 @@ def write_json_reports(
             hosts=report_hosts,
             impacket_status=impacket_status,
             discovery_mode=discovery_mode,
+            discovery_backend=discovery_backend,
+            discovery_status=discovery_status,
+            nuclei_status=nuclei_status,
         ),
     )
     written.append(cumulative_path)
@@ -107,6 +130,9 @@ def write_json_reports(
                 hosts=[host],
                 impacket_status=impacket_status,
                 discovery_mode=discovery_mode,
+                discovery_backend=discovery_backend,
+                discovery_status=discovery_status,
+                nuclei_status=nuclei_status,
             ),
         )
         written.append(host_path)
@@ -122,6 +148,9 @@ def write_report(
     scan_started_at: dt.datetime | None = None,
     impacket_status: str = "not requested (--impacket not used)",
     discovery_mode: bool = False,
+    discovery_backend: str = "not requested",
+    discovery_status: str = "not requested",
+    nuclei_status: str = "not requested (--nuclei not used)",
 ) -> None:
     """Write a single report file.
 
@@ -133,7 +162,14 @@ def write_report(
     write_lines(
         report_path,
         report_lines(
-            targets, started_at, reportable_hosts(hosts), impacket_status, discovery_mode
+            targets,
+            started_at,
+            reportable_hosts(hosts),
+            impacket_status,
+            discovery_mode,
+            discovery_backend,
+            discovery_status,
+            nuclei_status,
         ),
     )
 
@@ -162,6 +198,9 @@ def report_lines(
     hosts: list[HostObservation],
     impacket_status: str,
     discovery_mode: bool = False,
+    discovery_backend: str = "not requested",
+    discovery_status: str = "not requested",
+    nuclei_status: str = "not requested (--nuclei not used)",
 ) -> Iterator[str]:
     yield f"{APP_NAME} Report"
     yield f"Scan started (GMT): {format_gmt(scan_started_at)}"
@@ -169,6 +208,8 @@ def report_lines(
     yield f"Operator OS: {platform.system()} {platform.release()}"
     if discovery_mode:
         yield "Scan mode: discovery"
+        yield f"Discovery backend: {discovery_backend}"
+        yield f"Discovery status: {discovery_status}"
     yield f"Targets: {', '.join(targets)}"
     yield "Temporary XML: removed after parsing and report generation"
     yield ""
@@ -182,7 +223,6 @@ def report_lines(
     yield f"  Status: {impacket_status}"
     if not hosts:
         yield "  no responding hosts observed"
-        return
     found_impacket = False
     for host in hosts:
         host_lines = list(impacket_host_lines(host))
@@ -191,6 +231,17 @@ def report_lines(
         found_impacket = True
         yield from host_lines
     if not found_impacket:
+        yield "  none observed"
+    yield ""
+    yield "NUCLEI CVE RESULTS:"
+    yield f"  Status: {nuclei_status}"
+    found_nuclei = False
+    for host in hosts:
+        if not host.nuclei_findings:
+            continue
+        found_nuclei = True
+        yield from nuclei_host_lines(host)
+    if not found_nuclei:
         yield "  none observed"
 
 
@@ -245,6 +296,25 @@ def impacket_host_lines(host: HostObservation) -> Iterator[str]:
     yield from service_lines
 
 
+def nuclei_host_lines(host: HostObservation) -> Iterator[str]:
+    yield f"  Host: {host.display_name()}"
+    findings_by_port: dict[int | None, list[NucleiFinding]] = {}
+    for finding in host.nuclei_findings:
+        findings_by_port.setdefault(finding.port, []).append(finding)
+    for port in sorted(findings_by_port, key=lambda value: (value is None, value or 0)):
+        label = f"{port}/tcp" if port is not None else "unmapped endpoint"
+        yield f"    {label}:"
+        for finding in sorted(
+            findings_by_port[port],
+            key=lambda item: (item.template_id, item.matched_at),
+        ):
+            yield f"      [{finding.severity.upper()}] {finding.template_id or 'unknown'}"
+            if finding.name:
+                yield f"        {finding.name}"
+            if finding.matched_at:
+                yield f"        Matched: {finding.matched_at}"
+
+
 def nse_scripts(scripts: dict[str, str]) -> list[tuple[str, str]]:
     return [
         (script_id, output)
@@ -269,6 +339,9 @@ def json_report_document(
     hosts: list[HostObservation],
     impacket_status: str,
     discovery_mode: bool = False,
+    discovery_backend: str = "not requested",
+    discovery_status: str = "not requested",
+    nuclei_status: str = "not requested (--nuclei not used)",
 ) -> dict:
     return {
         "target": target,
@@ -277,7 +350,10 @@ def json_report_document(
         "scan_started_gmt": format_gmt(scan_started_at),
         "generated_gmt": format_gmt(dt.datetime.now(dt.timezone.utc)),
         **({"scan_mode": "discovery"} if discovery_mode else {}),
+        "discovery_backend": discovery_backend,
+        "discovery_status": discovery_status,
         "impacket_status": impacket_status,
+        "nuclei_status": nuclei_status,
         "hosts": [host_json(host) for host in hosts],
     }
 
@@ -303,6 +379,27 @@ def host_json(host: HostObservation) -> dict:
             host.services,
             key=lambda item: (item.port, item.protocol),
         )],
+        "nuclei_findings": [
+            nuclei_finding_json(finding)
+            for finding in sorted(
+                host.nuclei_findings,
+                key=lambda item: (item.port or 0, item.template_id, item.matched_at),
+            )
+        ],
+    }
+
+
+def nuclei_finding_json(finding: NucleiFinding) -> dict:
+    return {
+        "template_id": finding.template_id,
+        "name": finding.name,
+        "severity": finding.severity,
+        "matched_at": finding.matched_at,
+        "matcher_name": finding.matcher_name,
+        "protocol": finding.protocol,
+        "host": finding.host,
+        "port": finding.port,
+        "reference": list(finding.reference),
     }
 
 

@@ -54,6 +54,36 @@ class ImpacketUnavailableError(PortWeftError):
         super().__init__(reason)
 
 
+class ExternalToolNotFoundError(PortWeftError):
+    """Raised when an explicitly requested external tool is unavailable."""
+
+    exit_code = 127
+    tool_name = "External tool"
+    option_name = "--tool-path"
+
+    def __init__(self, path: str) -> None:
+        super().__init__(
+            f"{self.tool_name} was not found: {path}\n"
+            f"Install {self.tool_name}, add it to PATH, or pass its full path with "
+            f"{self.option_name}."
+        )
+
+
+class RustScanNotFoundError(ExternalToolNotFoundError):
+    tool_name = "RustScan"
+    option_name = "--rustscan-path"
+
+
+class MasscanNotFoundError(ExternalToolNotFoundError):
+    tool_name = "Masscan"
+    option_name = "--masscan-path"
+
+
+class NucleiNotFoundError(ExternalToolNotFoundError):
+    tool_name = "Nuclei"
+    option_name = "--nuclei-path"
+
+
 class TargetResolutionError(PortWeftError):
     """Raised when no input target can be resolved or scanned."""
 
