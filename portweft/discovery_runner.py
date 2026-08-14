@@ -93,8 +93,6 @@ def build_rustscan_command(path: str, targets: list[str]) -> list[str]:
         "--greppable",
         "--scripts",
         "none",
-        "--no-banner",
-        "--no-config",
     ]
 
 

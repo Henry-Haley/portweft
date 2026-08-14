@@ -126,6 +126,23 @@ class DiscoveryRunnerTests(unittest.TestCase):
         self.assertEqual(masscan[masscan.index("--rate") + 1], "2500")
         self.assertEqual(masscan[masscan.index("-oL") + 1], "out.list")
 
+    def test_rustscan_command_avoids_version_specific_optional_flags(self) -> None:
+        command = build_rustscan_command("/usr/bin/rustscan", ["10.129.85.33"])
+
+        self.assertEqual(
+            command,
+            [
+                "/usr/bin/rustscan",
+                "--addresses",
+                "10.129.85.33",
+                "--range",
+                "1-65535",
+                "--greppable",
+                "--scripts",
+                "none",
+            ],
+        )
+
     def test_nmap_discovery_normalizes_then_targets_only_discovered_ports(self) -> None:
         discovery_host = HostObservation(
             address="192.0.2.10",
