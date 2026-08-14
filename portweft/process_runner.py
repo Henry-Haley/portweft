@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 import subprocess
+import os
+import signal
 import time
 
 from portweft.utils import print_elapsed_step
 
 
 COMMAND_TIMEOUT_EXIT_CODE = 124
+
+
+def subprocess_group_kwargs() -> dict[str, object]:
+    if os.name == "nt":
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    return {"start_new_session": True}
 
 
 def wait_for_process(
@@ -42,6 +50,16 @@ def wait_for_process(
 
 
 def terminate_process(process: subprocess.Popen) -> None:
+    grouped = terminate_process_group(process)
+    if grouped:
+        try:
+            process.wait(timeout=5)
+            return
+        except subprocess.TimeoutExpired:
+            terminate_process_group(process, force=True)
+        except OSError:
+            return
+
     try:
         process.terminate()
     except OSError:
@@ -65,6 +83,28 @@ def terminate_process(process: subprocess.Popen) -> None:
             pass
     except OSError:
         pass
+
+
+def terminate_process_group(process: subprocess.Popen, force: bool = False) -> bool:
+    pid = getattr(process, "pid", None)
+    if not pid:
+        return False
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            return True
+        except OSError:
+            return False
+    try:
+        os.killpg(os.getpgid(pid), signal.SIGKILL if force else signal.SIGTERM)
+        return True
+    except OSError:
+        return False
 
 
 def close_process_streams(process: subprocess.Popen) -> None:

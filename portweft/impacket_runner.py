@@ -13,6 +13,7 @@ from portweft.models import ServiceObservation
 from portweft.process_runner import (
     COMMAND_TIMEOUT_EXIT_CODE,
     close_process_streams,
+    subprocess_group_kwargs,
     wait_for_process,
 )
 from portweft.profiles import SERVICE_PROFILES
@@ -227,6 +228,7 @@ def run_bounded_process(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        **subprocess_group_kwargs(),
     )
     stdout_parts: list[str] = []
     stderr_parts: list[str] = []

@@ -17,7 +17,11 @@ from portweft.errors import MasscanNotFoundError, RustScanNotFoundError
 from portweft.models import DiscoveryResult, HostObservation, ServiceObservation
 from portweft.nmap_runner import build_discovery_command, run_command
 from portweft.nmap_xml import parse_nmap_xml
-from portweft.process_runner import close_process_streams, wait_for_process
+from portweft.process_runner import (
+    close_process_streams,
+    subprocess_group_kwargs,
+    wait_for_process,
+)
 from portweft.utils import print_error, print_step, quote_command
 
 
@@ -312,6 +316,7 @@ def run_external_command(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        **subprocess_group_kwargs(),
     )
     stdout_parts: list[str] = []
     stderr_parts: list[str] = []
