@@ -158,6 +158,30 @@ class NmapXmlTests(unittest.TestCase):
 
         self.assertEqual(hosts, [])
 
+    def test_repeated_xml_services_are_merged_during_parsing(self) -> None:
+        with temporary_directory() as temp_dir:
+            path = Path(temp_dir) / "duplicate-service.xml"
+            path.write_text(
+                """
+                <nmaprun><host>
+                  <address addr="192.0.2.10" addrtype="ipv4"/>
+                  <ports>
+                    <port protocol="tcp" portid="80"><state state="open"/></port>
+                    <port protocol="tcp" portid="80">
+                      <state state="open"/>
+                      <service name="http" product="nginx"/>
+                    </port>
+                  </ports>
+                </host></nmaprun>
+                """,
+                encoding="utf-8",
+            )
+
+            hosts = parse_nmap_xml(path)
+
+        self.assertEqual(len(hosts[0].services), 1)
+        self.assertEqual(hosts[0].services[0].product, "nginx")
+
     def test_merge_hosts_updates_identity_and_services(self) -> None:
         base_host = HostObservation(
             address="192.0.2.10",

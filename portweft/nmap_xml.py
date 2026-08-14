@@ -63,6 +63,7 @@ def parse_host_element(
         os_source=os_source,
     )
 
+    services: dict[tuple[str, int], ServiceObservation] = {}
     for port_elem in host_elem.findall("ports/port"):
         state_elem = port_elem.find("state")
         state = state_elem.attrib.get("state", "") if state_elem is not None else ""
@@ -92,7 +93,12 @@ def parse_host_element(
             tunnel=service_attribute(service_elem, "tunnel"),
             scripts=parse_script_output(port_elem, max_script_output_chars),
         )
-        host.services.append(service)
+        key = (protocol, port)
+        if existing := services.get(key):
+            merge_service(existing, service)
+        else:
+            host.services.append(service)
+            services[key] = service
 
     if host.os_family == "unknown":
         host.os_family = infer_os_from_services(host.services)
