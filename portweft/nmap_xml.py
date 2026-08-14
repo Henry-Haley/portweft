@@ -233,6 +233,8 @@ def merge_hosts(base_hosts: list[HostObservation], update_hosts: list[HostObserv
 
 
 def merge_host_identity(base_host: HostObservation, update_host: HostObservation) -> None:
+    if update_host.status:
+        base_host.status = update_host.status
     if update_host.original_target and not base_host.original_target:
         base_host.original_target = update_host.original_target
     if update_host.resolved_ip and not base_host.resolved_ip:

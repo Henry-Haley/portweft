@@ -187,6 +187,7 @@ class NmapXmlTests(unittest.TestCase):
     def test_merge_hosts_updates_identity_and_services(self) -> None:
         base_host = HostObservation(
             address="192.0.2.10",
+            status="up",
             services=[
                 ServiceObservation(
                     host="192.0.2.10",
@@ -199,6 +200,7 @@ class NmapXmlTests(unittest.TestCase):
         )
         update_host = HostObservation(
             address="192.0.2.10",
+            status="down",
             hostname="linux.example",
             os_family="unix",
             os_name="Linux 5.x",
@@ -228,6 +230,7 @@ class NmapXmlTests(unittest.TestCase):
         merge_hosts([base_host], [update_host])
 
         self.assertEqual(base_host.hostname, "linux.example")
+        self.assertEqual(base_host.status, "down")
         self.assertEqual(base_host.os_name, "Linux 5.x")
         self.assertEqual(len(base_host.services), 2)
         self.assertEqual(base_host.services[0].product, "OpenSSH")
