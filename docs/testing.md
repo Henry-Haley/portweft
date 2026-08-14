@@ -94,7 +94,8 @@ Fixtures are small and purpose-built:
 
 The core suite does not require external network scanning. The optional
 integration test binds a local listener on loopback and skips itself when Nmap
-is not available.
+is not available. GitHub Actions tests Python 3.10–3.13 and has one Ubuntu job
+that installs Nmap so this localhost integration path executes.
 
 ## Temporary Files
 
@@ -111,5 +112,4 @@ python3 -m compileall -q portweft.py portweft tests/*.py
 git diff --check
 ```
 
-GitHub Actions also runs the unit tests and compile check on push and pull
-request.
+GitHub Actions also runs the tests and compile check on push and pull request.
