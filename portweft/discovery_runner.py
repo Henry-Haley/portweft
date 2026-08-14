@@ -19,7 +19,9 @@ from portweft.nmap_runner import build_discovery_command, run_command
 from portweft.nmap_xml import parse_nmap_xml
 from portweft.targets import normalize_ip
 from portweft.process_runner import (
+    attach_process_group,
     close_process_streams,
+    close_process_group,
     subprocess_group_kwargs,
     wait_for_process,
 )
@@ -316,6 +318,7 @@ def run_external_command(
         text=True,
         **subprocess_group_kwargs(),
     )
+    attach_process_group(process)
     stdout_parts: list[str] = []
     stderr_parts: list[str] = []
     readers = [
@@ -340,6 +343,7 @@ def run_external_command(
             stage,
         )
     finally:
+        close_process_group(process)
         for reader in readers:
             reader.join()
         close_process_streams(process)

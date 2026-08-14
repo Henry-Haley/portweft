@@ -12,6 +12,8 @@ from typing import TextIO
 from portweft.models import ServiceObservation
 from portweft.process_runner import (
     COMMAND_TIMEOUT_EXIT_CODE,
+    attach_process_group,
+    close_process_group,
     close_process_streams,
     subprocess_group_kwargs,
     wait_for_process,
@@ -230,6 +232,7 @@ def run_bounded_process(
         text=True,
         **subprocess_group_kwargs(),
     )
+    attach_process_group(process)
     stdout_parts: list[str] = []
     stderr_parts: list[str] = []
     stdout_reader = threading.Thread(
@@ -252,6 +255,7 @@ def run_bounded_process(
             stage,
         )
     finally:
+        close_process_group(process)
         stdout_reader.join()
         stderr_reader.join()
         close_process_streams(process)

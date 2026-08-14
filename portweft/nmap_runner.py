@@ -24,6 +24,8 @@ from portweft.errors import (
 from portweft.models import ServiceObservation
 from portweft.process_runner import (
     COMMAND_TIMEOUT_EXIT_CODE,
+    attach_process_group,
+    close_process_group,
     close_process_streams,
     subprocess_group_kwargs,
     wait_for_process,
@@ -594,6 +596,7 @@ def run_command(
             text=True,
             **subprocess_group_kwargs(),
         )
+        attach_process_group(process)
     except OSError as error:
         raise NmapNotFoundError(command[0]) from error
 
@@ -621,6 +624,7 @@ def run_command(
             stage,
         )
     finally:
+        close_process_group(process)
         stdout_reader.join()
         stderr_reader.join()
         close_process_streams(process)
