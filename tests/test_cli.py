@@ -710,6 +710,10 @@ class CliTests(unittest.TestCase):
         )
         self.assertIn("continuing with other hosts", stderr.getvalue())
         self.assertEqual(cumulative["scan_mode"], "discovery")
+        self.assertEqual(
+            cumulative["discovery_status"],
+            "partial failure: detailed service enumeration",
+        )
         by_address = {host["address"]: host for host in cumulative["hosts"]}
         self.assertEqual(by_address["192.0.2.10"]["services"][0]["port"], 22)
         self.assertEqual(

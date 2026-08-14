@@ -808,8 +808,9 @@ def run(argv: list[str] | None = None) -> int:
     if discovery_result is None:
         print_section_done("Initial XML parse")
 
+    discovery_enumeration_failed = False
     if parsed.discovery:
-        run_discovery_enumeration(
+        discovery_enumeration_failed = run_discovery_enumeration(
             parsed,
             extra_nmap_args,
             scan_dir,
@@ -872,6 +873,8 @@ def run(argv: list[str] | None = None) -> int:
     discovery_status = (
         discovery_result.status if discovery_result is not None else "not requested"
     )
+    if discovery_enumeration_failed:
+        discovery_status = "partial failure: detailed service enumeration"
 
     print_step(f"Writing reports: {report_dir}")
     if parsed.json:
@@ -976,7 +979,8 @@ def run_discovery_enumeration(
     hosts: list[HostObservation],
     resolutions: list[TargetResolution],
     timeout_seconds: float | None = None,
-) -> None:
+) -> bool:
+    failed = False
     for host in list(hosts):
         ports = sorted(
             {
@@ -1009,6 +1013,7 @@ def run_discovery_enumeration(
             stage=f"nmap enumeration {host.address}:{port_text}",
         )
         if not result.ok:
+            failed = True
             print_step(
                 f"Detailed service enumeration failed for {host.address}; "
                 "continuing with other hosts"
@@ -1018,6 +1023,7 @@ def run_discovery_enumeration(
             update_hosts = parse_nmap_xml(xml_path, parsed.max_script_output_chars)
             annotate_hosts_with_targets(update_hosts, resolutions)
         except PortWeftError as error:
+            failed = True
             print_error(str(error))
             print_step(
                 f"Detailed service enumeration parse failed for {host.address}; "
@@ -1030,6 +1036,7 @@ def run_discovery_enumeration(
             f"{host.address}:{port_text}/tcp",
         )
     print_section_done("Detailed service enumeration")
+    return failed
 
 
 def run_followups(
